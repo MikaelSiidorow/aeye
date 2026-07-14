@@ -7,7 +7,7 @@ import test from "node:test";
 import { eq } from "drizzle-orm";
 
 import { openDatabase } from "../db/database.ts";
-import { annotations, files, sessionStats, toolCalls } from "../db/schema.ts";
+import { annotations, files } from "../db/schema.ts";
 import { ClaudeIngestor } from "./ingestor.ts";
 
 function jsonLine(value: unknown) {
@@ -151,20 +151,17 @@ await test("scans, resumes, rewrites, and deterministically reindexes Claude ses
     assert.equal(replay.insertedEvents, 0);
     assert.equal(db.$client.prepare("SELECT count(*) AS count FROM events").get()?.["count"], 6);
 
-    const sourceEvent = db.query.events.findFirst({ where: { sessionId: "session-main" } }).sync();
-    assert.ok(sourceEvent);
-    db.insert(toolCalls)
-      .values({
-        sessionId: "session-main",
-        sourceEventId: sourceEvent.id,
-        toolUseId: "derived-tool",
-        name: "Read",
-      })
-      .run();
+    assert.equal(
+      db.$client.prepare("SELECT count(*) AS count FROM tool_calls").get()?.["count"],
+      1,
+    );
+    assert.equal(
+      db.$client.prepare("SELECT count(*) AS count FROM session_stats").get()?.["count"],
+      2,
+    );
     db.insert(annotations)
       .values({ sessionId: "session-main", kind: "skill", value: "test", createdAt: Date.now() })
       .run();
-    db.insert(sessionStats).values({ sessionId: "session-main", updatedAt: Date.now() }).run();
 
     writeFileSync(
       mainPath,
@@ -189,7 +186,7 @@ await test("scans, resumes, rewrites, and deterministically reindexes Claude ses
     );
     assert.equal(
       db.$client.prepare("SELECT count(*) AS count FROM session_stats").get()?.["count"],
-      0,
+      2,
     );
 
     const firstReindex = await ingestor.reindex();

@@ -17,6 +17,7 @@ import {
 } from "../db/schema.ts";
 import { env } from "../env.ts";
 import { parseClaudeCodeEvent, type NormalizedEvent } from "./claude-code.ts";
+import { deriveSession } from "./derive.ts";
 import { LineSplitter, type SplitLine } from "./line-splitter.ts";
 
 type ProjectRow = typeof projects.$inferSelect;
@@ -422,6 +423,10 @@ export class ClaudeIngestor extends EventEmitter {
       })
       .where(eq(files.id, file.id))
       .run();
+
+    if (sessionId !== undefined && (insertedEvents > 0 || rewritten)) {
+      deriveSession(this.#db, sessionId);
+    }
 
     return { insertedEvents, rewritten, sessionId };
   }
