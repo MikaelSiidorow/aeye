@@ -1,0 +1,117 @@
+<script lang="ts">
+  import type { PageProps } from "./$types";
+
+  let { data }: PageProps = $props();
+  const number = new Intl.NumberFormat();
+</script>
+
+<svelte:head>
+  <title>Aeye</title>
+  <meta name="description" content="Local coding session statistics" />
+</svelte:head>
+
+<main>
+  <header>
+    <p class="eyebrow">Local session index</p>
+    <h1>Aeye</h1>
+    <p>
+      {number.format(data.overview.sessionCount)} sessions ·
+      {number.format(data.overview.tokens.total)} active tokens
+    </p>
+  </header>
+
+  <section aria-labelledby="projects-heading">
+    <h2 id="projects-heading">Projects</h2>
+    {#if data.projects.length === 0}
+      <p>No indexed sessions yet.</p>
+    {:else}
+      <ul>
+        {#each data.projects as project}
+          <li>
+            <strong>{project.name}</strong>
+            <span>
+              {number.format(project.sessionCount)} sessions ·
+              {number.format(project.tokens)} tokens
+            </span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+</main>
+
+<style>
+  :global(*) {
+    box-sizing: border-box;
+  }
+
+  :global(body) {
+    margin: 0;
+    color: #18211b;
+    background: #f4f6f2;
+    font-family: ui-sans-serif, system-ui, sans-serif;
+  }
+
+  main {
+    width: min(48rem, calc(100% - 2rem));
+    margin: 0 auto;
+    padding: 4rem 0;
+  }
+
+  header,
+  section {
+    padding: 1.5rem;
+    border: 1px solid #d9ded8;
+    border-radius: 0.75rem;
+    background: #fff;
+  }
+
+  section {
+    margin-top: 1rem;
+  }
+
+  h1,
+  h2,
+  p {
+    margin-top: 0;
+  }
+
+  h1 {
+    margin-bottom: 0.25rem;
+    font-size: clamp(2.5rem, 8vw, 4rem);
+    letter-spacing: -0.06em;
+  }
+
+  h2 {
+    font-size: 1rem;
+  }
+
+  .eyebrow {
+    color: #607067;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  ul {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e8ebe7;
+  }
+
+  li span {
+    color: #607067;
+    text-align: right;
+  }
+</style>

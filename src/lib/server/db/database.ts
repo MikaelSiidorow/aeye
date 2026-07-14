@@ -9,7 +9,7 @@ import { migrate } from "drizzle-orm/node-sqlite/migrator";
 import { env } from "../env.ts";
 import { relations } from "./schema.ts";
 
-const migrationsFolder = fileURLToPath(new URL("../../../../drizzle", import.meta.url));
+const migrationsFolder = new URL("../../../../drizzle/", import.meta.url);
 
 export function openDatabase(path = env.databasePath) {
   if (path !== ":memory:") {
@@ -22,7 +22,10 @@ export function openDatabase(path = env.databasePath) {
   client.exec("PRAGMA foreign_keys = ON");
 
   const db = drizzle({ client, relations });
-  migrate(db, { migrationsFolder, migrationsTable: "__migrations" });
+  migrate(db, {
+    migrationsFolder: fileURLToPath(migrationsFolder),
+    migrationsTable: "__migrations",
+  });
   return db;
 }
 
