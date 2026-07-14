@@ -35,12 +35,16 @@ export const projects = snakeCase.table(
   "projects",
   {
     id: integer().primaryKey({ autoIncrement: true }),
+    sourcePath: text(),
     path: text().notNull(),
     name: text().notNull(),
     createdAt: integer().notNull(),
     updatedAt: integer().notNull(),
   },
-  (table) => [uniqueIndex("projects_path_unique").on(table.path)],
+  (table) => [
+    uniqueIndex("projects_source_path_unique").on(table.sourcePath),
+    uniqueIndex("projects_path_unique").on(table.path),
+  ],
 );
 
 export const sessions = snakeCase.table(

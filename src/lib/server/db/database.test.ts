@@ -57,16 +57,16 @@ await test("migrates on open and preserves 64-bit byte offsets", () => {
     assert.equal(db.$client.prepare("PRAGMA journal_mode").get()?.["journal_mode"], "wal");
     assert.equal(db.$client.prepare("PRAGMA synchronous").get()?.["synchronous"], 1);
     assert.equal(db.$client.prepare("PRAGMA foreign_keys").get()?.["foreign_keys"], 1);
-    assert.equal(
-      db.$client.prepare("SELECT count(*) AS count FROM __migrations").get()?.["count"],
-      1,
-    );
+    const appliedMigrations = db.$client
+      .prepare("SELECT count(*) AS count FROM __migrations")
+      .get()?.["count"];
+    assert.ok(typeof appliedMigrations === "number" && appliedMigrations > 0);
     db.$client.close();
 
     const reopened = openDatabase(path);
     assert.equal(
       reopened.$client.prepare("SELECT count(*) AS count FROM __migrations").get()?.["count"],
-      1,
+      appliedMigrations,
     );
     reopened.$client.close();
   } finally {

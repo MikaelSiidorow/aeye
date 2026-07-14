@@ -28,6 +28,7 @@ interface NormalizedEventBase {
   sessionId: string | undefined;
   uuid: string | undefined;
   parentUuid: string | undefined;
+  forkedFromSessionId: string | undefined;
   timestampMs: number | undefined;
   cwd: string | undefined;
   gitBranch: string | undefined;
@@ -284,6 +285,8 @@ function baseEvent(value: JsonRecord, rawType: string): NormalizedEventBase {
     sessionId: stringField(value, "sessionId") ?? stringField(value, "session_id"),
     uuid: stringField(value, "uuid"),
     parentUuid: stringField(value, "parentUuid"),
+    forkedFromSessionId:
+      stringField(value, "forkedFromSessionId") ?? stringField(value, "forked_from_session_id"),
     timestampMs: timestampMs(value),
     cwd: stringField(value, "cwd"),
     gitBranch: stringField(value, "gitBranch"),

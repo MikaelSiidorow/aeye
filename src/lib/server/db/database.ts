@@ -25,3 +25,5 @@ export function openDatabase(path = env.databasePath) {
   migrate(db, { migrationsFolder, migrationsTable: "__migrations" });
   return db;
 }
+
+export type Database = ReturnType<typeof openDatabase>;

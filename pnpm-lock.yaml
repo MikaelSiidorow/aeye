@@ -207,6 +207,9 @@ importers:
 
   .:
     dependencies:
+      chokidar:
+        specifier: ^4.0.3
+        version: 4.0.3
       drizzle-orm:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4
@@ -838,6 +841,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  chokidar@4.0.3:
+    resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
+    engines: {node: '>= 14.16.0'}
+
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
@@ -1048,6 +1055,10 @@ packages:
 
   pure-rand@8.4.2:
     resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
+
+  readdirp@4.1.2:
+    resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
+    engines: {node: '>= 14.18.0'}
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
@@ -1370,6 +1381,10 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
+  chokidar@4.0.3:
+    dependencies:
+      readdirp: 4.1.2
+
   detect-libc@2.1.2: {}
 
   drizzle-kit@1.0.0-rc.4:
@@ -1493,6 +1508,8 @@ snapshots:
       oxlint-tsgolint: 0.24.0
 
   pure-rand@8.4.2: {}
+
+  readdirp@4.1.2: {}
 
   resolve-pkg-maps@1.0.0: {}
 
