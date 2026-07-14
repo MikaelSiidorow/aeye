@@ -17,7 +17,7 @@ import {
 } from "../db/schema.ts";
 import { env } from "../env.ts";
 import { parseClaudeCodeEvent, type NormalizedEvent } from "./claude-code.ts";
-import { deriveSession } from "./derive.ts";
+import { deriveAllSessions } from "./derive.ts";
 import { LineSplitter, type SplitLine } from "./line-splitter.ts";
 
 type ProjectRow = typeof projects.$inferSelect;
@@ -243,6 +243,8 @@ export class ClaudeIngestor extends EventEmitter {
   async #drainLoop() {
     const summary = emptySummary();
     const started = performance.now();
+    const updates: SessionUpdatedEvent[] = [];
+    let needsDerivation = false;
 
     while (this.#dirty.size > 0) {
       const filePath = this.#dirty.keys().next().value as string;
@@ -254,8 +256,9 @@ export class ClaudeIngestor extends EventEmitter {
         summary.processedFiles++;
         summary.insertedEvents += result.insertedEvents;
         if (result.rewritten) summary.rewrittenFiles++;
+        if (result.insertedEvents > 0 || result.rewritten) needsDerivation = true;
         if (result.sessionId !== undefined && result.insertedEvents > 0) {
-          this.emit("session:updated", {
+          updates.push({
             sessionId: result.sessionId,
             filePath,
             insertedEvents: result.insertedEvents,
@@ -266,6 +269,9 @@ export class ClaudeIngestor extends EventEmitter {
         this.emit("ingest:error", { filePath, error } satisfies IngestErrorEvent);
       }
     }
+
+    if (needsDerivation) deriveAllSessions(this.#db);
+    for (const update of updates) this.emit("session:updated", update);
 
     summary.durationMs = Math.round(performance.now() - started);
     return summary;
@@ -364,11 +370,15 @@ export class ClaudeIngestor extends EventEmitter {
         kind: event.kind,
         type: event.type,
         model: event.model ?? null,
+        messageId: event.messageId ?? null,
+        requestId: event.requestId ?? null,
+        hasUsage: event.hasUsage,
         inputTokens: event.usage.inputTokens,
         outputTokens: event.usage.outputTokens,
         cacheReadTokens: event.usage.cacheReadTokens,
         cacheWriteTokens: event.usage.cacheWriteTokens,
         isSidechain: event.isSidechain,
+        isUsageDuplicate: false,
         isDeadBranch: false,
         isMeta: event.isMeta,
         isInterrupt: event.isInterrupt,
@@ -423,10 +433,6 @@ export class ClaudeIngestor extends EventEmitter {
       })
       .where(eq(files.id, file.id))
       .run();
-
-    if (sessionId !== undefined && (insertedEvents > 0 || rewritten)) {
-      deriveSession(this.#db, sessionId);
-    }
 
     return { insertedEvents, rewritten, sessionId };
   }

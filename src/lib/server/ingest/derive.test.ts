@@ -220,3 +220,97 @@ await test("derives branch liveness, tool matches, tokens, turns, and cost", asy
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+await test("deduplicates parent usage replayed in a subagent transcript", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "aeye-usage-dedupe-"));
+  const root = join(directory, "projects");
+  const project = join(root, "-tmp-dedupe-project");
+  const mainPath = join(project, "session.jsonl");
+  const agentDirectory = join(project, "session", "subagents");
+  const agentPath = join(agentDirectory, "agent-worker.jsonl");
+  mkdirSync(agentDirectory, { recursive: true });
+
+  writeFileSync(
+    mainPath,
+    line({
+      type: "assistant",
+      sessionId: "session",
+      cwd: "/tmp/dedupe-project",
+      uuid: "main-answer",
+      timestamp: "2026-07-14T10:00:00.000Z",
+      requestId: "request-main",
+      message: {
+        id: "message-replayed",
+        role: "assistant",
+        model: "claude-test",
+        usage: { input_tokens: 10, output_tokens: 2 },
+        content: [],
+      },
+    }),
+  );
+  writeFileSync(
+    agentPath,
+    line({
+      type: "assistant",
+      sessionId: "session",
+      cwd: "/tmp/dedupe-project",
+      uuid: "replayed-answer",
+      timestamp: "2026-07-14T10:00:01.000Z",
+      requestId: "request-sidechain-replay",
+      isSidechain: true,
+      message: {
+        id: "message-replayed",
+        role: "assistant",
+        model: "claude-test",
+        usage: { input_tokens: 1_000, output_tokens: 100 },
+        content: [],
+      },
+    }) +
+      line({
+        type: "assistant",
+        sessionId: "session",
+        cwd: "/tmp/dedupe-project",
+        uuid: "agent-answer",
+        parentUuid: "replayed-answer",
+        timestamp: "2026-07-14T10:00:02.000Z",
+        requestId: "request-agent",
+        isSidechain: true,
+        message: {
+          id: "message-agent",
+          role: "assistant",
+          model: "claude-test",
+          usage: { input_tokens: 3, output_tokens: 4 },
+          content: [],
+        },
+      }),
+  );
+
+  const db = openDatabase(join(directory, "test.sqlite"));
+  try {
+    const summary = await new ClaudeIngestor(db, { root }).scan();
+    assert.equal(summary.insertedEvents, 3);
+    assert.deepEqual(
+      db.$client
+        .prepare("SELECT message_id, is_sidechain FROM events WHERE is_usage_duplicate = 1")
+        .all()
+        .map((row) => ({ ...row })),
+      [{ message_id: "message-replayed", is_sidechain: 1 }],
+    );
+
+    const main = db.query.sessionStats.findFirst({ where: { sessionId: "session" } }).sync();
+    const agent = db.query.sessionStats
+      .findFirst({ where: { sessionId: "session:agent:agent-worker" } })
+      .sync();
+    assert.deepEqual(
+      { input: main?.tokInput, output: main?.tokOutput, turns: main?.assistantTurns },
+      { input: 10, output: 2, turns: 1 },
+    );
+    assert.deepEqual(
+      { input: agent?.tokInput, output: agent?.tokOutput, turns: agent?.assistantTurns },
+      { input: 3, output: 4, turns: 1 },
+    );
+  } finally {
+    db.$client.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

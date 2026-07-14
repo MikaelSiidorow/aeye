@@ -23,6 +23,17 @@ interface PendingToolCall {
   tool: NormalizedToolUse;
 }
 
+interface UsageRepresentative {
+  id: number;
+  messageId: string;
+  requestId: string | null;
+  isSidechain: boolean;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export interface DerivationSummary {
   sessionId: string;
   deadBranchEvents: number;
@@ -116,7 +127,11 @@ function toolCallRows(derivedEvents: DerivedEvent[], deadEventIds: Set<number>) 
     });
   }
 
-  const activeCount = calls.filter((call) => !deadEventIds.has(call.sourceEventId)).length;
+  const eventById = new Map(derivedEvents.map(({ row }) => [row.id, row]));
+  const activeCount = calls.filter((call) => {
+    const source = eventById.get(call.sourceEventId);
+    return !deadEventIds.has(call.sourceEventId) && source?.isUsageDuplicate !== true;
+  }).length;
   return { calls, activeCount };
 }
 
@@ -127,7 +142,7 @@ function calculateCost(
 ) {
   let cost = 0;
   for (const { row } of derivedEvents) {
-    if (deadEventIds.has(row.id) || row.model === null) continue;
+    if (row.isUsageDuplicate || deadEventIds.has(row.id) || row.model === null) continue;
     const timestamp = row.timestampMs ?? Number.MAX_SAFE_INTEGER;
     const price = pricing
       .filter((candidate) => candidate.model === row.model && candidate.effectiveFrom <= timestamp)
@@ -161,6 +176,7 @@ function sessionStatistics(
   let endedAt: number | undefined;
 
   for (const { row, normalized } of derivedEvents) {
+    if (row.isUsageDuplicate) continue;
     if (deadEventIds.has(row.id)) {
       tokDeadBranch +=
         row.inputTokens + row.outputTokens + row.cacheReadTokens + row.cacheWriteTokens;
@@ -198,6 +214,93 @@ function sessionStatistics(
     costUsd,
     updatedAt: endedAt ?? startedAt ?? 0,
   } satisfies typeof sessionStats.$inferInsert;
+}
+
+function usageTotal(event: UsageRepresentative) {
+  return event.inputTokens + event.outputTokens + event.cacheReadTokens + event.cacheWriteTokens;
+}
+
+function exactUsageKey(messageId: string, requestId: string | null) {
+  return JSON.stringify([messageId, requestId]);
+}
+
+function addIndex(indexes: Map<string, number[]>, key: string, index: number) {
+  const bucket = indexes.get(key) ?? [];
+  if (!bucket.includes(index)) bucket.push(index);
+  indexes.set(key, bucket);
+}
+
+export function markUsageDuplicates(db: Database) {
+  const usageEvents = db
+    .select({
+      id: events.id,
+      messageId: events.messageId,
+      requestId: events.requestId,
+      isSidechain: events.isSidechain,
+      inputTokens: events.inputTokens,
+      outputTokens: events.outputTokens,
+      cacheReadTokens: events.cacheReadTokens,
+      cacheWriteTokens: events.cacheWriteTokens,
+    })
+    .from(events)
+    .innerJoin(files, eq(events.fileId, files.id))
+    .where(eq(events.hasUsage, true))
+    .orderBy(asc(files.path), asc(events.seq))
+    .all();
+  const representatives: UsageRepresentative[] = [];
+  const exactIndexes = new Map<string, number[]>();
+  const messageIndexes = new Map<string, number[]>();
+  const duplicateIds = new Set<number>();
+
+  for (const candidate of usageEvents) {
+    if (candidate.messageId === null) continue;
+    const event = { ...candidate, messageId: candidate.messageId } satisfies UsageRepresentative;
+    const exactKey = exactUsageKey(event.messageId, event.requestId);
+    let representativeIndex = exactIndexes.get(exactKey)?.find((index) => {
+      const existing = representatives[index];
+      return existing?.messageId === event.messageId && existing.requestId === event.requestId;
+    });
+    representativeIndex ??= messageIndexes.get(event.messageId)?.find((index) => {
+      const existing = representatives[index];
+      return existing?.messageId === event.messageId && (event.isSidechain || existing.isSidechain);
+    });
+
+    if (representativeIndex !== undefined) {
+      const existing = representatives[representativeIndex];
+      if (existing === undefined) throw new Error("Missing usage representative");
+      const replace =
+        event.isSidechain !== existing.isSidechain
+          ? existing.isSidechain
+          : usageTotal(event) > usageTotal(existing);
+      if (replace) {
+        duplicateIds.add(existing.id);
+        representatives[representativeIndex] = event;
+        addIndex(exactIndexes, exactKey, representativeIndex);
+        addIndex(messageIndexes, event.messageId, representativeIndex);
+      } else {
+        duplicateIds.add(event.id);
+      }
+      continue;
+    }
+
+    const index = representatives.length;
+    representatives.push(event);
+    addIndex(exactIndexes, exactKey, index);
+    addIndex(messageIndexes, event.messageId, index);
+  }
+
+  db.transaction((tx) => {
+    tx.update(events).set({ isUsageDuplicate: false }).run();
+    const ids = [...duplicateIds];
+    for (let index = 0; index < ids.length; index += 500) {
+      tx.update(events)
+        .set({ isUsageDuplicate: true })
+        .where(inArray(events.id, ids.slice(index, index + 500)))
+        .run();
+    }
+  });
+
+  return duplicateIds.size;
 }
 
 function normalizedEvents(db: Database, sessionId: string) {
@@ -273,4 +376,16 @@ export function deriveSession(db: Database, sessionId: string): DerivationSummar
     unmatchedToolCalls: calls.filter(({ status }) => status !== "completed" && status !== "error")
       .length,
   };
+}
+
+export function deriveAllSessions(db: Database) {
+  const usageDuplicates = markUsageDuplicates(db);
+  const sessionIds = db
+    .selectDistinct({ sessionId: events.sessionId })
+    .from(events)
+    .orderBy(asc(events.sessionId))
+    .all()
+    .map(({ sessionId }) => sessionId);
+  const summaries = sessionIds.map((sessionId) => deriveSession(db, sessionId));
+  return { usageDuplicates, summaries };
 }

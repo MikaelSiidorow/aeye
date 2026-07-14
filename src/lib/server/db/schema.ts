@@ -122,11 +122,15 @@ export const events = snakeCase.table(
     kind: text({ enum: eventKindValues }).notNull(),
     type: text().notNull(),
     model: text(),
+    messageId: text(),
+    requestId: text(),
+    hasUsage: integer({ mode: "boolean" }).notNull().default(false),
     inputTokens: integer().notNull().default(0),
     outputTokens: integer().notNull().default(0),
     cacheReadTokens: integer().notNull().default(0),
     cacheWriteTokens: integer().notNull().default(0),
     isSidechain: integer({ mode: "boolean" }).notNull().default(false),
+    isUsageDuplicate: integer({ mode: "boolean" }).notNull().default(false),
     isDeadBranch: integer({ mode: "boolean" }).notNull().default(false),
     isMeta: integer({ mode: "boolean" }).notNull().default(false),
     isInterrupt: integer({ mode: "boolean" }).notNull().default(false),
@@ -137,6 +141,7 @@ export const events = snakeCase.table(
     index("events_session_id_timestamp_ms_idx").on(table.sessionId, table.timestampMs),
     index("events_session_id_uuid_idx").on(table.sessionId, table.uuid),
     index("events_session_id_parent_uuid_idx").on(table.sessionId, table.parentUuid),
+    index("events_message_id_request_id_idx").on(table.messageId, table.requestId),
   ],
 );
 

@@ -34,6 +34,9 @@ interface NormalizedEventBase {
   gitBranch: string | undefined;
   version: string | undefined;
   model: string | undefined;
+  messageId: string | undefined;
+  requestId: string | undefined;
+  hasUsage: boolean;
   isSidechain: boolean;
   isMeta: boolean;
   isInterrupt: boolean;
@@ -292,6 +295,9 @@ function baseEvent(value: JsonRecord, rawType: string): NormalizedEventBase {
     gitBranch: stringField(value, "gitBranch"),
     version: stringField(value, "version"),
     model: message === undefined ? undefined : stringField(message, "model"),
+    messageId: message === undefined ? undefined : stringField(message, "id"),
+    requestId: stringField(value, "requestId") ?? stringField(value, "request_id"),
+    hasUsage: message !== undefined && isRecord(message["usage"]),
     isSidechain: value["isSidechain"] === true,
     isMeta: value["isMeta"] === true || metaTypes.has(rawType),
     isInterrupt:

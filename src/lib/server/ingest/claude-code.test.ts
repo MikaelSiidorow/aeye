@@ -87,7 +87,9 @@ await test("extracts assistant usage and tool metadata without retaining input o
       cwd: "/tmp/project",
       gitBranch: "main",
       version: "1.2.3",
+      requestId: "request-1",
       message: {
+        id: "message-1",
         role: "assistant",
         model: "claude-test",
         stop_reason: "tool_use",
@@ -118,6 +120,9 @@ await test("extracts assistant usage and tool metadata without retaining input o
   );
 
   assert.equal(event.kind, "assistant");
+  assert.equal(event.messageId, "message-1");
+  assert.equal(event.requestId, "request-1");
+  assert.equal(event.hasUsage, true);
   assert.deepEqual(event.usage, {
     inputTokens: 10,
     outputTokens: 20,
