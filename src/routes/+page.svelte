@@ -28,11 +28,13 @@
       <ul>
         {#each data.projects as project}
           <li>
-            <strong>{project.name}</strong>
-            <span>
-              {number.format(project.sessionCount)} sessions ·
-              {number.format(project.tokens)} tokens
-            </span>
+            <a href="/projects/{project.id}">
+              <strong>{project.name}</strong>
+              <span>
+                {number.format(project.sessionCount)} sessions ·
+                {number.format(project.tokens)} tokens
+              </span>
+            </a>
           </li>
         {/each}
       </ul>
@@ -41,17 +43,6 @@
 </main>
 
 <style>
-  :global(*) {
-    box-sizing: border-box;
-  }
-
-  :global(body) {
-    margin: 0;
-    color: #18211b;
-    background: #f4f6f2;
-    font-family: ui-sans-serif, system-ui, sans-serif;
-  }
-
   main {
     width: min(48rem, calc(100% - 2rem));
     margin: 0 auto;
@@ -103,14 +94,23 @@
   }
 
   li {
+    border-top: 1px solid #e8ebe7;
+  }
+
+  li a {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #e8ebe7;
+    color: inherit;
+    text-decoration: none;
   }
 
-  li span {
+  li a:hover strong {
+    text-decoration: underline;
+  }
+
+  li a span {
     color: #607067;
     text-align: right;
   }

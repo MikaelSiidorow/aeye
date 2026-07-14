@@ -19,7 +19,13 @@ function copyMigrations(): Plugin {
 export default defineConfig({
   plugins: [
     sveltekit({
+      experimental: {
+        remoteFunctions: true,
+      },
       compilerOptions: {
+        experimental: {
+          async: true,
+        },
         runes: ({ filename }) =>
           filename.split(/[/\\]/).includes("node_modules") ? undefined : true,
       },
