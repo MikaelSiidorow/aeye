@@ -1,4 +1,4 @@
-import { defineRelations } from "drizzle-orm";
+import { and, defineRelations, eq } from "drizzle-orm";
 import {
   foreignKey,
   index,
@@ -225,6 +225,82 @@ export const sessionStats = snakeCase.table("session_stats", {
   costUsd: numeric({ mode: "number" }).notNull().default(0),
   updatedAt: integer().notNull(),
 });
+
+export const activeUsageEvents = snakeCase.view("active_usage_events").as((query) =>
+  query
+    .select({
+      eventId: events.id,
+      sessionId: events.sessionId,
+      projectId: sessions.projectId,
+      timestampMs: events.timestampMs,
+      model: events.model,
+      inputTokens: events.inputTokens,
+      outputTokens: events.outputTokens,
+      cacheReadTokens: events.cacheReadTokens,
+      cacheWriteTokens: events.cacheWriteTokens,
+    })
+    .from(events)
+    .innerJoin(sessions, eq(events.sessionId, sessions.id))
+    .where(
+      and(
+        eq(events.hasUsage, true),
+        eq(events.isUsageDuplicate, false),
+        eq(events.isDeadBranch, false),
+      ),
+    ),
+);
+
+export const activeToolCalls = snakeCase.view("active_tool_calls").as((query) =>
+  query
+    .select({
+      toolCallId: toolCalls.id,
+      sessionId: toolCalls.sessionId,
+      projectId: sessions.projectId,
+      name: toolCalls.name,
+      status: toolCalls.status,
+      isError: toolCalls.isError,
+      startedAt: toolCalls.startedAt,
+      endedAt: toolCalls.endedAt,
+      durationMs: toolCalls.durationMs,
+    })
+    .from(toolCalls)
+    .innerJoin(events, eq(toolCalls.sourceEventId, events.id))
+    .innerJoin(sessions, eq(toolCalls.sessionId, sessions.id))
+    .where(and(eq(events.isUsageDuplicate, false), eq(events.isDeadBranch, false))),
+);
+
+export const sessionReadModel = snakeCase.view("session_read_model").as((query) =>
+  query
+    .select({
+      id: sessions.id,
+      sourceSessionId: sessions.sourceSessionId,
+      projectId: sessions.projectId,
+      projectName: projects.name,
+      projectPath: projects.path,
+      parentId: sessions.parentId,
+      forkOf: sessions.forkOf,
+      agentId: sessions.agentId,
+      cwd: sessions.cwd,
+      gitBranch: sessions.gitBranch,
+      claudeVersion: sessions.claudeVersion,
+      userTurns: sessionStats.userTurns,
+      assistantTurns: sessionStats.assistantTurns,
+      toolCalls: sessionStats.toolCalls,
+      startedAt: sessionStats.startedAt,
+      endedAt: sessionStats.endedAt,
+      durationMs: sessionStats.durationMs,
+      tokInput: sessionStats.tokInput,
+      tokOutput: sessionStats.tokOutput,
+      tokCacheRead: sessionStats.tokCacheRead,
+      tokCacheWrite: sessionStats.tokCacheWrite,
+      tokDeadBranch: sessionStats.tokDeadBranch,
+      costUsd: sessionStats.costUsd,
+      updatedAt: sessionStats.updatedAt,
+    })
+    .from(sessions)
+    .innerJoin(projects, eq(sessions.projectId, projects.id))
+    .innerJoin(sessionStats, eq(sessions.id, sessionStats.sessionId)),
+);
 
 export const schema = {
   projects,
