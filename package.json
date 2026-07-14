@@ -1,0 +1,27 @@
+{
+  "name": "aeye",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "fmt": "oxfmt .",
+    "check": "oxfmt --check . && oxlint --type-aware --type-check ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "fallow": "^3.3.0",
+    "oxfmt": "^0.58.0",
+    "oxlint": "^1.73.0",
+    "oxlint-tsgolint": "^0.24.0",
+    "typescript": "^7.0.2"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.10.0",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=26"
+  }
+}
