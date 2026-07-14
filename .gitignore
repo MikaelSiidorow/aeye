@@ -1,3 +1,6 @@
 docs/
 .direnv
 node_modules
+fixtures/raw/
+fixtures/corpus/
+data/
