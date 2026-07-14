@@ -220,6 +220,9 @@ importers:
       fallow:
         specifier: ^3.3.0
         version: 3.3.0
+      fast-check:
+        specifier: ^4.9.0
+        version: 4.9.0
       oxfmt:
         specifier: ^0.58.0
         version: 0.58.0
@@ -999,6 +1002,10 @@ packages:
     engines: {node: '>=16'}
     hasBin: true
 
+  fast-check@4.9.0:
+    resolution: {integrity: sha512-7ms6T7SybUev/PQITciI0yLM2pOSFy5zpG8Ty7tQofcVaQUvrMXp6CBwqF6fThLCLOrfBtuHAtwq6Yu4XPCllg==}
+    engines: {node: '>=12.17.0'}
+
   get-tsconfig@4.14.0:
     resolution: {integrity: sha512-yTb+8DXzDREzgvYmh6s9vHsSVCHeC0G3PI5bEXNBHtmshPnO+S5O7qgLEOn0I5QvMy6kpZN8K1NKGyilLb93wA==}
 
@@ -1038,6 +1045,9 @@ packages:
         optional: true
       vite-plus:
         optional: true
+
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
 
   resolve-pkg-maps@1.0.0:
     resolution: {integrity: sha512-seS2Tj26TBVOC2NIc2rOe2y2ZO7efxITtLZcGSOnHHNOQ7CkiUBfw0Iw2ck6xkIhPwLhKNLS8BO+hEpngQlqzw==}
@@ -1414,6 +1424,10 @@ snapshots:
       '@fallow-cli/win32-arm64-msvc': 3.3.0
       '@fallow-cli/win32-x64-msvc': 3.3.0
 
+  fast-check@4.9.0:
+    dependencies:
+      pure-rand: 8.4.2
+
   get-tsconfig@4.14.0:
     dependencies:
       resolve-pkg-maps: 1.0.0
@@ -1477,6 +1491,8 @@ snapshots:
       '@oxlint/binding-win32-ia32-msvc': 1.73.0
       '@oxlint/binding-win32-x64-msvc': 1.73.0
       oxlint-tsgolint: 0.24.0
+
+  pure-rand@8.4.2: {}
 
   resolve-pkg-maps@1.0.0: {}
 
