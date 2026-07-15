@@ -1,22 +1,9 @@
 import { error } from "@sveltejs/kit";
 import { query } from "$app/server";
 
+import type { StandardSchema } from "$lib/remote-schema";
 import { openDatabase } from "$lib/server/db/database";
 import { AeyeReadModel } from "$lib/server/read-model";
-
-interface StandardSchema<Input, Output> {
-  readonly "~standard": {
-    readonly version: 1;
-    readonly vendor: string;
-    readonly validate: (
-      value: unknown,
-    ) => { readonly value: Output } | { readonly issues: readonly { readonly message: string }[] };
-    readonly types?: {
-      readonly input: Input;
-      readonly output: Output;
-    };
-  };
-}
 
 const projectIdSchema: StandardSchema<string, number> = {
   "~standard": {
@@ -40,6 +27,7 @@ export const getProject = query(projectIdSchema, (projectId) => {
     if (!project) error(404, "Project not found");
 
     const sessions = readModel.listSessions({ projectId, limit: 100 }).map((session) => ({
+      id: session.id,
       isSubagent: session.agentId !== null,
       userTurns: session.userTurns,
       assistantTurns: session.assistantTurns,

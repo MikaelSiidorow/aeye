@@ -68,17 +68,19 @@
         {#each project.sessions as session}
           {@const timestamp = session.endedAt ?? session.startedAt}
           <li>
-            <div>
-              <strong>{session.isSubagent ? "Subagent" : "Root session"}</strong>
-              <time datetime={timestamp === null ? undefined : new Date(timestamp).toISOString()}>
-                {formatTimestamp(timestamp)}
-              </time>
-            </div>
-            <span>
-              {number.format(session.tokens)} tokens ·
-              {number.format(session.toolCalls)} tools ·
-              {number.format(session.userTurns + session.assistantTurns)} turns
-            </span>
+            <a class="session-link" href="/sessions/{encodeURIComponent(session.id)}">
+              <div>
+                <strong>{session.isSubagent ? "Subagent" : "Root session"}</strong>
+                <time datetime={timestamp === null ? undefined : new Date(timestamp).toISOString()}>
+                  {formatTimestamp(timestamp)}
+                </time>
+              </div>
+              <span>
+                {number.format(session.tokens)} tokens ·
+                {number.format(session.toolCalls)} tools ·
+                {number.format(session.userTurns + session.assistantTurns)} turns
+              </span>
+            </a>
           </li>
         {/each}
       </ul>
@@ -150,7 +152,7 @@
   dt,
   .section-heading span,
   time,
-  li > span {
+  .session-link > span {
     color: #607067;
     font-size: 0.875rem;
   }
@@ -162,8 +164,8 @@
   }
 
   .section-heading,
-  li,
-  li div {
+  .session-link,
+  .session-link div {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
@@ -182,21 +184,30 @@
     border-top: 1px solid #e8ebe7;
   }
 
-  li div {
+  .session-link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .session-link:hover strong {
+    text-decoration: underline;
+  }
+
+  .session-link div {
     flex-direction: column;
     gap: 0.15rem;
   }
 
-  li > span {
+  .session-link > span {
     text-align: right;
   }
 
   @media (max-width: 34rem) {
-    li {
+    .session-link {
       flex-direction: column;
     }
 
-    li > span {
+    .session-link > span {
       text-align: left;
     }
   }
