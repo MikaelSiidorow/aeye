@@ -47,6 +47,9 @@ export interface SessionSummary {
   parentId: string | null;
   forkOf: string | null;
   agentId: string | null;
+  source: "claude" | "codex";
+  clientName: string | null;
+  clientVersion: string | null;
   cwd: string;
   gitBranch: string | null;
   claudeVersion: string | null;
@@ -234,6 +237,9 @@ function sessionSummary(row: SessionRow): SessionSummary {
     parentId: row.parentId,
     forkOf: row.forkOf,
     agentId: row.agentId,
+    source: row.source,
+    clientName: row.clientName,
+    clientVersion: row.clientVersion,
     cwd: row.cwd,
     gitBranch: row.gitBranch,
     claudeVersion: row.claudeVersion,

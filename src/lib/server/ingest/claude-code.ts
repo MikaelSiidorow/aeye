@@ -26,6 +26,10 @@ export interface NormalizedToolResult {
 
 interface NormalizedEventBase {
   sessionId: string | undefined;
+  parentSessionId: string | undefined;
+  agentId: string | undefined;
+  agentRole: string | undefined;
+  clientName: string | undefined;
   uuid: string | undefined;
   parentUuid: string | undefined;
   forkedFromSessionId: string | undefined;
@@ -286,6 +290,10 @@ function baseEvent(value: JsonRecord, rawType: string): NormalizedEventBase {
 
   return {
     sessionId: stringField(value, "sessionId") ?? stringField(value, "session_id"),
+    parentSessionId: undefined,
+    agentId: undefined,
+    agentRole: undefined,
+    clientName: undefined,
     uuid: stringField(value, "uuid"),
     parentUuid: stringField(value, "parentUuid"),
     forkedFromSessionId:

@@ -99,8 +99,13 @@
       >
         {formatLocalDateTime(session.summary.startedAt)}
       </time>
-      {#if session.summary.claudeVersion}
-        · Claude Code {session.summary.claudeVersion}
+      {#if session.summary.source === "codex"}
+        · Codex {session.summary.clientVersion ?? ""}
+        {#if session.summary.clientName && session.summary.clientName !== "codex-tui"}
+          · via {session.summary.clientName}
+        {/if}
+      {:else if session.summary.clientVersion ?? session.summary.claudeVersion}
+        · Claude Code {session.summary.clientVersion ?? session.summary.claudeVersion}
       {/if}
     </p>
 

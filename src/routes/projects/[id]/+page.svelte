@@ -14,12 +14,14 @@
   const number = new Intl.NumberFormat("en");
 
   function groupSessions(sessions: ProjectSession[]) {
-    const roots = sessions.filter(({ parentId }) => parentId === null);
+    const roots = sessions.filter(({ isSubagent }) => !isSubagent);
     const rootIds = new Set(roots.map(({ id }) => id));
     const childrenByParent = new Map<string, ProjectSession[]>();
 
     for (const session of sessions) {
-      if (session.parentId === null || !rootIds.has(session.parentId)) continue;
+      if (!session.isSubagent || session.parentId === null || !rootIds.has(session.parentId)) {
+        continue;
+      }
       const children = childrenByParent.get(session.parentId) ?? [];
       children.push(session);
       childrenByParent.set(session.parentId, children);
@@ -31,7 +33,8 @@
         children: childrenByParent.get(root.id) ?? [],
       })),
       orphans: sessions.filter(
-        ({ parentId }) => parentId !== null && !rootIds.has(parentId),
+        ({ isSubagent, parentId }) =>
+          isSubagent && (parentId === null || !rootIds.has(parentId)),
       ),
     };
   }

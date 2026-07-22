@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 export const compressionValues = ["none", "gzip", "zstd"] as const;
+export const sessionSourceValues = ["claude", "codex"] as const;
 export const eventKindValues = [
   "user",
   "assistant",
@@ -58,6 +59,9 @@ export const sessions = snakeCase.table(
     parentId: text(),
     forkOf: text(),
     agentId: text(),
+    source: text({ enum: sessionSourceValues }).notNull().default("claude"),
+    clientName: text(),
+    clientVersion: text(),
     cwd: text().notNull(),
     gitBranch: text(),
     claudeVersion: text(),
@@ -280,6 +284,9 @@ export const sessionReadModel = snakeCase.view("session_read_model").as((query) 
       parentId: sessions.parentId,
       forkOf: sessions.forkOf,
       agentId: sessions.agentId,
+      source: sessions.source,
+      clientName: sessions.clientName,
+      clientVersion: sessions.clientVersion,
       cwd: sessions.cwd,
       gitBranch: sessions.gitBranch,
       claudeVersion: sessions.claudeVersion,

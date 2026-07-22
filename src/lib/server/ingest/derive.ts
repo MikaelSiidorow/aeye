@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { gunzipSync, zstdDecompressSync } from "node:zlib";
 
 import { asc, eq, inArray } from "drizzle-orm";
 
@@ -9,6 +10,7 @@ import {
   type NormalizedEvent,
   type NormalizedToolUse,
 } from "./claude-code.ts";
+import { CodexEventParser } from "./codex.ts";
 
 type EventRow = typeof events.$inferSelect;
 type ToolCallInsert = typeof toolCalls.$inferInsert;
@@ -304,34 +306,51 @@ export function markUsageDuplicates(db: Database) {
 }
 
 function normalizedEvents(db: Database, sessionId: string) {
+  const session = db.query.sessions.findFirst({ where: { id: sessionId } }).sync();
+  if (session === undefined) throw new Error(`Missing session ${sessionId}`);
   const rows = db
     .select()
     .from(events)
     .where(eq(events.sessionId, sessionId))
     .orderBy(asc(events.seq))
     .all();
+  const fileIds = [...new Set(rows.map(({ fileId }) => fileId))];
   const sourceFiles = new Map(
-    db
-      .select()
-      .from(files)
-      .all()
-      .map((file) => [file.id, file]),
+    (fileIds.length === 0
+      ? []
+      : db.select().from(files).where(inArray(files.id, fileIds)).all()
+    ).map((file) => [file.id, file]),
   );
   const buffers = new Map<number, Buffer>();
+  const codexParsers = new Map<number, CodexEventParser>();
 
   return rows.map((row) => {
     const file = sourceFiles.get(row.fileId);
     if (file === undefined) throw new Error(`Missing source file ${row.fileId}`);
-    if (file.compression !== "none") {
-      throw new Error(`Unsupported source compression: ${file.compression}`);
-    }
     let buffer = buffers.get(file.id);
     if (buffer === undefined) {
-      buffer = readFileSync(file.path);
+      const source = readFileSync(file.path);
+      buffer =
+        file.compression === "zstd"
+          ? zstdDecompressSync(source)
+          : file.compression === "gzip"
+            ? gunzipSync(source)
+            : source;
       buffers.set(file.id, buffer);
     }
     const line = buffer.subarray(row.byteOffset, row.byteOffset + row.byteLength).toString("utf8");
-    return { row, normalized: parseClaudeCodeEvent(line) } satisfies DerivedEvent;
+    let normalized: NormalizedEvent;
+    if (session.source === "codex") {
+      let parser = codexParsers.get(file.id);
+      if (parser === undefined) {
+        parser = new CodexEventParser();
+        codexParsers.set(file.id, parser);
+      }
+      normalized = parser.parse(line);
+    } else {
+      normalized = parseClaudeCodeEvent(line);
+    }
+    return { row, normalized } satisfies DerivedEvent;
   });
 }
 
@@ -379,13 +398,23 @@ export function deriveSession(db: Database, sessionId: string): DerivationSummar
 }
 
 export function deriveAllSessions(db: Database) {
-  const usageDuplicates = markUsageDuplicates(db);
   const sessionIds = db
     .selectDistinct({ sessionId: events.sessionId })
     .from(events)
     .orderBy(asc(events.sessionId))
     .all()
     .map(({ sessionId }) => sessionId);
-  const summaries = sessionIds.map((sessionId) => deriveSession(db, sessionId));
+  return deriveSessions(db, sessionIds);
+}
+
+export function deriveSessions(
+  db: Database,
+  sessionIds: Iterable<string>,
+  { refreshUsageDuplicates = true } = {},
+) {
+  const usageDuplicates = refreshUsageDuplicates ? markUsageDuplicates(db) : 0;
+  const summaries = [...new Set(sessionIds)]
+    .sort()
+    .map((sessionId) => deriveSession(db, sessionId));
   return { usageDuplicates, summaries };
 }
