@@ -28,6 +28,7 @@ export const getProject = query(projectIdSchema, (projectId) => {
 
     const sessions = readModel.listSessions({ projectId, limit: 100 }).map((session) => ({
       id: session.id,
+      parentId: session.parentId,
       isSubagent: session.agentId !== null,
       userTurns: session.userTurns,
       assistantTurns: session.assistantTurns,

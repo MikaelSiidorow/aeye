@@ -33,7 +33,8 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
     const detail = new AeyeReadModel(db).getSession(sessionId);
     if (!detail) error(404, "Session not found");
 
-    const nodes = detail.graph.nodes.slice(-graphNodeLimit).map((node) => ({
+    const conversationNodes = detail.graph.nodes.filter(({ uuid }) => uuid !== null);
+    const nodes = conversationNodes.slice(-graphNodeLimit).map((node) => ({
       eventId: node.eventId,
       seq: node.seq,
       kind: node.kind,
@@ -78,8 +79,9 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
         }),
       ),
       graph: {
-        totalNodes: detail.graph.nodes.length,
+        totalNodes: conversationNodes.length,
         totalEdges: detail.graph.edges.length,
+        auxiliaryEvents: detail.graph.nodes.length - conversationNodes.length,
         nodes,
         edges,
       },

@@ -224,7 +224,7 @@
 
   <section aria-labelledby="graph-heading">
     <div class="section-heading">
-      <h2 id="graph-heading">Event graph</h2>
+      <h2 id="graph-heading">Conversation graph</h2>
       <span>
         {number.format(session.graph.totalNodes)} nodes ·
         {number.format(session.graph.totalEdges)} edges
@@ -232,10 +232,17 @@
     </div>
 
     {#if graph.nodes.length === 0}
-      <p>No events recorded.</p>
+      <p>No conversation events recorded.</p>
     {:else}
       {#if graph.nodes.length < session.graph.totalNodes}
-        <p class="graph-note">Showing the latest {number.format(graph.nodes.length)} events.</p>
+        <p class="graph-note">
+          Showing the latest {number.format(graph.nodes.length)} conversation events.
+        </p>
+      {/if}
+      {#if session.graph.auxiliaryEvents > 0}
+        <p class="graph-note">
+          {number.format(session.graph.auxiliaryEvents)} auxiliary events are omitted from the DAG.
+        </p>
       {/if}
       <div class="graph-scroll">
         <svg
@@ -316,7 +323,7 @@
   p,
   dl,
   dd {
-    margin-top: 0;
+    margin: 0;
   }
 
   h1 {
@@ -346,6 +353,11 @@
     margin-bottom: 0;
   }
 
+  .headline-metrics > div,
+  .metrics > div {
+    min-width: 0;
+  }
+
   .headline-metrics {
     padding-top: 1rem;
     border-top: 1px solid #e8ebe7;
@@ -370,9 +382,9 @@
   }
 
   dd {
-    margin-bottom: 0;
     font-size: 1.1rem;
     font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   .table-scroll,
