@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
+  import { formatLocalDateTime } from "$lib/date";
   import { getSession } from "$lib/sessions.remote";
 
   import type { PageProps } from "./$types";
@@ -15,16 +17,6 @@
     minimumFractionDigits: 2,
     maximumFractionDigits: 4,
   });
-  const date = new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  });
-
-  function formatTimestamp(timestamp: number | null) {
-    return timestamp === null ? "Unknown" : `${date.format(timestamp)} UTC`;
-  }
-
   function formatDuration(durationMs: number | null) {
     if (durationMs === null) return "n/a";
     if (durationMs < 1_000) return `${number.format(durationMs)} ms`;
@@ -85,7 +77,16 @@
 </svelte:head>
 
 <main>
-  <a class="back" href="/projects/{session.summary.projectId}">← {session.summary.projectName}</a>
+  <Breadcrumbs
+    items={[
+      { label: "Projects", href: "/" },
+      { label: session.summary.projectName, href: `/projects/${session.summary.projectId}` },
+      ...(session.summary.parentId === null
+        ? []
+        : [{ label: "Main thread", href: `/sessions/${encodeURIComponent(session.summary.parentId)}` }]),
+      { label: session.summary.isSubagent ? "Subagent" : "Session" },
+    ]}
+  />
 
   <header>
     <p class="eyebrow">{session.summary.isSubagent ? "Subagent session" : "Root session"}</p>
@@ -96,7 +97,7 @@
           ? undefined
           : new Date(session.summary.startedAt).toISOString()}
       >
-        {formatTimestamp(session.summary.startedAt)}
+        {formatLocalDateTime(session.summary.startedAt)}
       </time>
       {#if session.summary.claudeVersion}
         · Claude Code {session.summary.claudeVersion}
@@ -298,12 +299,6 @@
     width: min(68rem, calc(100% - 2rem));
     margin: 0 auto;
     padding: 2rem 0 4rem;
-  }
-
-  .back {
-    display: inline-block;
-    margin-bottom: 1rem;
-    color: #46604f;
   }
 
   header,

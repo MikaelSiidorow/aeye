@@ -56,6 +56,7 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
       summary: {
         projectId: detail.summary.projectId,
         projectName: detail.summary.projectName,
+        parentId: detail.summary.parentId,
         isSubagent: detail.summary.agentId !== null,
         claudeVersion: detail.summary.claudeVersion,
         userTurns: detail.summary.userTurns,

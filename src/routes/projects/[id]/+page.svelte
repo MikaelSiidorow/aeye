@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
+  import { formatLocalDateTime } from "$lib/date";
   import { getProject } from "$lib/projects.remote";
 
   import type { PageProps } from "./$types";
@@ -10,11 +12,6 @@
   const project = $derived(await getProject(params.id));
   const hierarchy = $derived(groupSessions(project.sessions));
   const number = new Intl.NumberFormat("en");
-  const date = new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  });
 
   function groupSessions(sessions: ProjectSession[]) {
     const roots = sessions.filter(({ parentId }) => parentId === null);
@@ -39,10 +36,6 @@
     };
   }
 
-  function formatTimestamp(timestamp: number | null) {
-    return timestamp === null ? "Unknown" : `${date.format(timestamp)} UTC`;
-  }
-
   function activityTimestamp(session: ProjectSession) {
     return session.endedAt ?? session.startedAt;
   }
@@ -62,9 +55,7 @@
 </svelte:head>
 
 <main>
-  <nav aria-label="Breadcrumb">
-    <a class="back" href="/"><span aria-hidden="true">←</span> Projects</a>
-  </nav>
+  <Breadcrumbs items={[{ label: "Projects", href: "/" }, { label: project.name }]} />
 
   <header class="project-header">
     <p class="eyebrow">Project overview</p>
@@ -133,7 +124,7 @@
                     ? undefined
                     : new Date(rootTimestamp).toISOString()}
                 >
-                  Last activity {formatTimestamp(rootTimestamp)}
+                  Last activity {formatLocalDateTime(rootTimestamp)}
                 </time>
               </div>
               <div class="row-end">
@@ -170,7 +161,7 @@
                               ? undefined
                               : new Date(childTimestamp).toISOString()}
                           >
-                            Last activity {formatTimestamp(childTimestamp)}
+                            Last activity {formatLocalDateTime(childTimestamp)}
                           </time>
                         </div>
                         <div class="row-end">
@@ -212,7 +203,7 @@
                             ? undefined
                             : new Date(childTimestamp).toISOString()}
                         >
-                          Last activity {formatTimestamp(childTimestamp)}
+                          Last activity {formatLocalDateTime(childTimestamp)}
                         </time>
                       </div>
                       <div class="row-end">
@@ -247,18 +238,6 @@
     width: min(60rem, calc(100% - 2rem));
     margin: 0 auto;
     padding: clamp(1.5rem, 4vw, 3rem) 0 5rem;
-  }
-
-  nav {
-    margin-bottom: 1rem;
-  }
-
-  .back {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--color-accent);
-    font-size: 0.925rem;
   }
 
   .project-header,
