@@ -3,6 +3,7 @@ import { command, getRequestEvent, query } from "$app/server";
 
 import type { StandardSchema } from "$lib/remote-schema";
 import { openDatabase } from "$lib/server/db/database";
+import { liveSnapshots } from "$lib/server/live-query";
 import { AeyeReadModel } from "$lib/server/read-model";
 import {
   createResumeDescriptor,
@@ -48,7 +49,7 @@ function resumePayload(session: Parameters<typeof createResumeDescriptor>[0]) {
   };
 }
 
-export const getSession = query(sessionIdSchema, (sessionId) => {
+function readSession(sessionId: string) {
   const db = openDatabase();
   try {
     const detail = new AeyeReadModel(db).getSession(sessionId);
@@ -132,7 +133,14 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
   } finally {
     db.$client.close();
   }
-});
+}
+
+export const getSession = query.live(sessionIdSchema, (sessionId) =>
+  liveSnapshots(
+    () => readSession(sessionId),
+    ({ sessionIds }) => sessionIds.includes(sessionId),
+  ),
+);
 
 export const launchSession = command(sessionIdSchema, async (sessionId) => {
   const request = getRequestEvent();

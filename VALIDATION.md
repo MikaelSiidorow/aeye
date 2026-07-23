@@ -89,6 +89,17 @@ transcripts while the production watchers were running.
 Both appended events were indexed and derived within one second. No real provider transcript
 was modified for this test.
 
+## Live UI
+
+The app was started against isolated Claude, Codex, and database paths. An overview
+`query.live` stream remained open while a complete Claude event was appended. The watcher
+indexed and derived the event, then the same stream returned an updated snapshot without a
+navigation or manual refresh.
+
+The app held its database writer lock for the full run. A concurrent ingestion command for
+the same database stopped with a readable process-specific error. Releasing the runtime
+closed both watchers and its stream subscriber. A stale lock was recovered on the next start.
+
 ## Repository checks
 
 ```sh
@@ -96,11 +107,12 @@ pnpm test
 pnpm check
 ```
 
-All 26 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, and TypeScript
+All 33 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, and TypeScript
 checks passed.
 
 ## Result
 
 The M5 validation oracle passes. Full replay is deterministic, Claude accounting reconciles
 exactly with ccusage after the documented branch-liveness difference, and live tail updates
-arrive within one second.
+arrive within one second. The M9 live UI oracle also passes for stream updates, targeted
+project filtering, reconnect state, singleton watcher cleanup, and database writer exclusion.

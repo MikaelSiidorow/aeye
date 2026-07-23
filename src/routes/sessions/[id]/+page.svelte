@@ -1,5 +1,6 @@
 <script lang="ts">
   import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
+  import LiveStatus from "$lib/components/LiveStatus.svelte";
   import { formatLocalDateTime } from "$lib/date";
   import { getSession, launchSession } from "$lib/sessions.remote";
 
@@ -9,7 +10,8 @@
 
   let { params }: PageProps = $props();
   let resumeMessage = $state<string | null>(null);
-  const session = $derived(await getSession(params.id));
+  const sessionQuery = $derived(getSession(params.id));
+  const session = $derived(await sessionQuery);
   const graph = $derived(layoutGraph(session.graph));
   const number = new Intl.NumberFormat("en");
   const cost = new Intl.NumberFormat("en", {
@@ -135,7 +137,16 @@
   <header>
     <div class="header-top">
       <div>
-        <p class="eyebrow">{session.summary.isSubagent ? "Subagent session" : "Root session"}</p>
+        <div class="eyebrow-row">
+          <p class="eyebrow">
+            {session.summary.isSubagent ? "Subagent session" : "Root session"}
+          </p>
+          <LiveStatus
+            connected={sessionQuery.connected}
+            loading={sessionQuery.loading}
+            reconnect={() => sessionQuery.reconnect()}
+          />
+        </div>
         <h1>{session.summary.isSubagent ? "Subagent" : "Session"}</h1>
         <p>
           <time
@@ -436,6 +447,12 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .eyebrow-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
   }
 
   .header-top {

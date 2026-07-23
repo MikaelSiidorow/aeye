@@ -1,7 +1,10 @@
+import { query } from "$app/server";
+
 import { openDatabase } from "$lib/server/db/database";
+import { liveSnapshots } from "$lib/server/live-query";
 import { AeyeReadModel } from "$lib/server/read-model";
 
-export function load() {
+function readOverview() {
   const db = openDatabase();
   try {
     const readModel = new AeyeReadModel(db);
@@ -16,3 +19,5 @@ export function load() {
     db.$client.close();
   }
 }
+
+export const getOverview = query.live(() => liveSnapshots(readOverview));

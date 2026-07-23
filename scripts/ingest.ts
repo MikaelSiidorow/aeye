@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 
 import { openDatabase } from "../src/lib/server/db/database.ts";
+import { acquireWriterLock } from "../src/lib/server/db/writer-lock.ts";
 import { env } from "../src/lib/server/env.ts";
 import { CodexIngestor } from "../src/lib/server/ingest/codex-ingestor.ts";
 import { ClaudeIngestor, type IngestErrorEvent } from "../src/lib/server/ingest/ingestor.ts";
@@ -18,7 +19,15 @@ const { values } = parseArgs({
   },
 });
 
-const db = openDatabase(values.database ?? env.databasePath);
+const databasePath = values.database ?? env.databasePath;
+const writerLock = acquireWriterLock(databasePath);
+let db;
+try {
+  db = openDatabase(databasePath);
+} catch (error) {
+  writerLock.release();
+  throw error;
+}
 const claude = new ClaudeIngestor(db, {
   root: values["claude-root"] ?? values.root ?? env.claudeProjectsPath,
 });
@@ -54,4 +63,5 @@ try {
   }
 } finally {
   db.$client.close();
+  writerLock.release();
 }

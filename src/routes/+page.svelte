@@ -1,7 +1,9 @@
 <script lang="ts">
-  import type { PageProps } from "./$types";
+  import LiveStatus from "$lib/components/LiveStatus.svelte";
+  import { getOverview } from "$lib/overview.remote";
 
-  let { data }: PageProps = $props();
+  const overviewQuery = getOverview();
+  const data = $derived(await overviewQuery);
   const number = new Intl.NumberFormat();
 </script>
 
@@ -12,7 +14,14 @@
 
 <main>
   <header>
-    <p class="eyebrow">Local session index</p>
+    <div class="eyebrow-row">
+      <p class="eyebrow">Local session index</p>
+      <LiveStatus
+        connected={overviewQuery.connected}
+        loading={overviewQuery.loading}
+        reconnect={() => overviewQuery.reconnect()}
+      />
+    </div>
     <h1>Aeye</h1>
     <p>
       {number.format(data.overview.sessionCount)} sessions ·
@@ -84,6 +93,13 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .eyebrow-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
   ul {

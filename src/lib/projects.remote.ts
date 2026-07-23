@@ -3,6 +3,7 @@ import { query } from "$app/server";
 
 import type { StandardSchema } from "$lib/remote-schema";
 import { openDatabase } from "$lib/server/db/database";
+import { liveSnapshots } from "$lib/server/live-query";
 import { AeyeReadModel } from "$lib/server/read-model";
 
 const projectIdSchema: StandardSchema<string, number> = {
@@ -19,7 +20,7 @@ const projectIdSchema: StandardSchema<string, number> = {
   },
 };
 
-export const getProject = query(projectIdSchema, (projectId) => {
+function readProject(projectId: number) {
   const db = openDatabase();
   try {
     const readModel = new AeyeReadModel(db);
@@ -53,4 +54,11 @@ export const getProject = query(projectIdSchema, (projectId) => {
   } finally {
     db.$client.close();
   }
-});
+}
+
+export const getProject = query.live(projectIdSchema, (projectId) =>
+  liveSnapshots(
+    () => readProject(projectId),
+    ({ projectIds }) => projectIds.includes(projectId),
+  ),
+);

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
+  import LiveStatus from "$lib/components/LiveStatus.svelte";
   import { formatLocalDateTime } from "$lib/date";
   import { getProject } from "$lib/projects.remote";
 
@@ -9,7 +10,8 @@
   type ProjectSession = Project["sessions"][number];
 
   let { params }: PageProps = $props();
-  const project = $derived(await getProject(params.id));
+  const projectQuery = $derived(getProject(params.id));
+  const project = $derived(await projectQuery);
   const hierarchy = $derived(groupSessions(project.sessions));
   const number = new Intl.NumberFormat("en");
 
@@ -61,7 +63,14 @@
   <Breadcrumbs items={[{ label: "Projects", href: "/" }, { label: project.name }]} />
 
   <header class="project-header">
-    <p class="eyebrow">Project overview</p>
+    <div class="eyebrow-row">
+      <p class="eyebrow">Project overview</p>
+      <LiveStatus
+        connected={projectQuery.connected}
+        loading={projectQuery.loading}
+        reconnect={() => projectQuery.reconnect()}
+      />
+    </div>
     <h1>{project.name}</h1>
     <p class="project-summary">
       {number.format(project.sessionCount)} indexed sessions across
@@ -289,6 +298,13 @@
     font-weight: 750;
     letter-spacing: 0.11em;
     text-transform: uppercase;
+  }
+
+  .eyebrow-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
   }
 
   .project-summary {
