@@ -1,75 +1,106 @@
-# Slice 0 validation
+# Validation
 
-Validated on 2026-07-14 with Node 26.5.0, pnpm 11.13.0, ccusage 20.0.17, and the `Europe/Berlin` reporting timezone.
+Validated on July 23, 2026 with Node 26.5.0 and ccusage 20.0.18.
 
-## Full-history index
+## Frozen corpus
 
-The validation database was rebuilt from `~/.claude/projects`.
+The source directories were copied once before validation. This kept the active Codex rollout
+from changing between reindex passes.
 
-| Measurement            |   Result |
-| ---------------------- | -------: |
-| Projects               |        5 |
-| Sessions               |       29 |
-| Files                  |       29 |
-| Events                 |    3,534 |
-| Tool calls             |      729 |
-| Ingestor duration      |   680 ms |
-| Whole command duration | 1,474 ms |
-| Failed files           |        0 |
+| Source      | Files |   Size |
+| ----------- | ----: | -----: |
+| Claude Code |    30 |  15 MB |
+| Codex       |   439 | 562 MB |
 
-A scan immediately after the rebuild queued no files, inserted no events, and completed in 41 ms.
+The indexed result contained:
+
+| Table         |    Rows |
+| ------------- | ------: |
+| Projects      |      29 |
+| Sessions      |     469 |
+| Events        | 175,588 |
+| Tool calls    |  37,924 |
+| Session stats |     469 |
+| Session links |      17 |
+
+## Reindex determinism
+
+Two full `--reindex` passes ran against the same frozen source copy.
+
+| Pass   | Claude |     Codex | Failed files |
+| ------ | -----: | --------: | -----------: |
+| First  | 601 ms | 14,659 ms |            0 |
+| Second | 588 ms | 16,682 ms |            0 |
+
+SHA-256 hashes over ordered rows matched for projects, sessions, events, tool calls,
+annotations, session stats, and session links. The normalized and derived data is
+byte-identical after replay.
+
+The `files` table is not part of the derived-data oracle. Its `last_ingested_at` value records
+the replay time and therefore changes on every pass.
+
+A scan after the second replay queued no files and inserted no events. The Claude scan took
+25 ms and the Codex scan took 108 ms.
 
 ## ccusage reconciliation
 
-The comparison used:
+ccusage was run against the same frozen Claude directory in UTC:
 
 ```sh
-pnpm dlx ccusage claude daily --json --breakdown \
-  --timezone Europe/Berlin --offline
+CLAUDE_CONFIG_DIR=/tmp/aeye-validation/claude-config \
+  pnpm dlx ccusage@20.0.18 claude daily --json --offline --timezone UTC
 ```
 
-Claude transcripts can replay the same API response in parent and sidechain logs. ccusage deduplicates these usage records by message and request identity. If one copy is a sidechain entry, it prefers the non-sidechain copy. Aeye now preserves every event row and marks replayed usage with `is_usage_duplicate`.
+| View                          |      Tokens | Difference from ccusage |
+| ----------------------------- | ----------: | ----------------------: |
+| ccusage                       | 144,268,878 |                       0 |
+| Aeye, all unique usage events | 144,268,878 |                       0 |
+| Aeye, active branches         | 143,998,558 |      -270,320 (-0.187%) |
 
-The snapshot contained 1,402 events with usage, of which 735 were replay copies and 667 were canonical usage records.
+Claude transcripts can replay the same API response in parent and sidechain logs. ccusage
+deduplicates these responses. Aeye keeps every event row and marks replayed usage with
+`is_usage_duplicate`. The snapshot contained 2,037 usage events. Of these, 1,049 were replay
+copies and 988 were canonical usage events.
 
-| Token category |    ccusage | Aeye canonical | Delta |
-| -------------- | ---------: | -------------: | ----: |
-| Input          |     89,952 |         89,952 |     0 |
-| Output         |    406,776 |        406,776 |     0 |
-| Cache read     | 68,764,314 |     68,764,314 |     0 |
-| Cache write    |  2,155,487 |      2,155,487 |     0 |
-| Total          | 71,416,529 |     71,416,529 |     0 |
+The "all unique" view excludes those replay copies. Its totals match ccusage exactly for every
+token category, day, and model.
 
-Daily totals also matched exactly:
+The active-view difference is one dead `claude-sonnet-5` branch from July 5:
 
-| Berlin date |    ccusage | Aeye canonical | Delta |
-| ----------- | ---------: | -------------: | ----: |
-| 2026-07-05  | 42,450,738 |     42,450,738 |     0 |
-| 2026-07-06  |  5,866,643 |      5,866,643 |     0 |
-| 2026-07-09  | 12,649,705 |     12,649,705 |     0 |
-| 2026-07-14  | 10,449,443 |     10,449,443 |     0 |
+| Breakdown         |    ccusage | Aeye active | Difference |
+| ----------------- | ---------: | ----------: | ---------: |
+| July 5            | 42,450,738 |  42,180,418 |   -270,320 |
+| `claude-sonnet-5` |  3,278,022 |   3,007,702 |   -270,320 |
 
-Model totals matched exactly:
-
-| Model           |    ccusage | Aeye canonical | Delta |
-| --------------- | ---------: | -------------: | ----: |
-| claude-fable-5  | 67,969,045 |     67,969,045 |     0 |
-| claude-sonnet-5 |  3,234,685 |      3,234,685 |     0 |
-| claude-opus-4-8 |    212,799 |        212,799 |     0 |
-
-`session_stats` intentionally describes only the active conversation branch. Its total was 71,146,209 tokens. The 270,320-token difference from ccusage exactly matched `tok_dead_branch`, so the remaining divergence is accounted for by branch semantics rather than parsing loss.
+Every other day and model matches exactly. ccusage counts the dead branch. Aeye preserves its
+usage in `tok_dead_branch` but excludes it from active totals. Adding the dead-branch tokens
+back produces the exact ccusage result.
 
 ## Live tail
 
-The watcher was started against the real Claude tree. Its cold scan completed successfully, but no natural source write occurred during a 35-second read-only observation window.
+A controlled complete line was appended to format-valid temporary Claude and Codex
+transcripts while the production watchers were running.
 
-The same watcher was then exercised end to end against a temporary Claude-format transcript. A complete appended event reached both `events` and the recomputed `session_stats` in 325 ms. The resulting token totals included the appended event. This is below the one-second oracle.
+| Source      | Settle threshold | Update latency | Result |
+| ----------- | ---------------: | -------------: | ------ |
+| Claude Code |           300 ms |         316 ms | Pass   |
+| Codex       |           300 ms |         316 ms | Pass   |
 
-## Verification
+Both appended events were indexed and derived within one second. No real provider transcript
+was modified for this test.
+
+## Repository checks
 
 ```sh
 pnpm test
-pnpm run check
+pnpm check
 ```
 
-All 17 tests passed. Formatting, lint, type-aware lint, and TypeScript checks passed.
+All 26 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, and TypeScript
+checks passed.
+
+## Result
+
+The M5 validation oracle passes. Full replay is deterministic, Claude accounting reconciles
+exactly with ccusage after the documented branch-liveness difference, and live tail updates
+arrive within one second.
