@@ -1,13 +1,14 @@
 <script lang="ts">
   import Breadcrumbs from "$lib/components/Breadcrumbs.svelte";
   import { formatLocalDateTime } from "$lib/date";
-  import { getSession } from "$lib/sessions.remote";
+  import { getSession, launchSession } from "$lib/sessions.remote";
 
   import type { PageProps } from "./$types";
 
   type Session = Awaited<ReturnType<typeof getSession>>;
 
   let { params }: PageProps = $props();
+  let resumeMessage = $state<string | null>(null);
   const session = $derived(await getSession(params.id));
   const graph = $derived(layoutGraph(session.graph));
   const number = new Intl.NumberFormat("en");
@@ -50,6 +51,26 @@
         ? "thread"
         : "session";
     return `${providerLabel(link.related.source)} ${role}`;
+  }
+
+  async function copyResumeCommand() {
+    if (session.resume === null) return;
+    try {
+      await navigator.clipboard.writeText(session.resume.command);
+      resumeMessage = "Resume command copied.";
+    } catch {
+      resumeMessage = "The resume command could not be copied.";
+    }
+  }
+
+  async function openResumeSession() {
+    resumeMessage = null;
+    try {
+      const result = await launchSession(params.id);
+      resumeMessage = `Opened in ${result.terminal}.`;
+    } catch (cause) {
+      resumeMessage = cause instanceof Error ? cause.message : "The terminal could not be opened.";
+    }
   }
 
   function layoutGraph(input: Session["graph"]) {
@@ -112,25 +133,52 @@
   />
 
   <header>
-    <p class="eyebrow">{session.summary.isSubagent ? "Subagent session" : "Root session"}</p>
-    <h1>{session.summary.isSubagent ? "Subagent" : "Session"}</h1>
-    <p>
-      <time
-        datetime={session.summary.startedAt === null
-          ? undefined
-          : new Date(session.summary.startedAt).toISOString()}
-      >
-        {formatLocalDateTime(session.summary.startedAt)}
-      </time>
-      {#if session.summary.source === "codex"}
-        · Codex {session.summary.clientVersion ?? ""}
-        {#if session.summary.clientName && session.summary.clientName !== "codex-tui"}
-          · via {session.summary.clientName}
-        {/if}
-      {:else if session.summary.clientVersion ?? session.summary.claudeVersion}
-        · Claude Code {session.summary.clientVersion ?? session.summary.claudeVersion}
+    <div class="header-top">
+      <div>
+        <p class="eyebrow">{session.summary.isSubagent ? "Subagent session" : "Root session"}</p>
+        <h1>{session.summary.isSubagent ? "Subagent" : "Session"}</h1>
+        <p>
+          <time
+            datetime={session.summary.startedAt === null
+              ? undefined
+              : new Date(session.summary.startedAt).toISOString()}
+          >
+            {formatLocalDateTime(session.summary.startedAt)}
+          </time>
+          {#if session.summary.source === "codex"}
+            · Codex {session.summary.clientVersion ?? ""}
+            {#if session.summary.clientName && session.summary.clientName !== "codex-tui"}
+              · via {session.summary.clientName}
+            {/if}
+          {:else if session.summary.clientVersion ?? session.summary.claudeVersion}
+            · Claude Code {session.summary.clientVersion ?? session.summary.claudeVersion}
+          {/if}
+        </p>
+      </div>
+
+      {#if session.resume !== null}
+        <div class="resume-panel">
+          <div class="resume-actions">
+            <button
+              type="button"
+              class="resume-primary"
+              disabled={!session.resume.canLaunch || launchSession.pending > 0}
+              title={session.resume.unavailableReason ?? undefined}
+              onclick={openResumeSession}
+            >
+              {launchSession.pending > 0 ? "Opening…" : session.resume.label}
+            </button>
+            <button type="button" onclick={copyResumeCommand}>Copy command</button>
+          </div>
+          <p class="resume-status" aria-live="polite">
+            {resumeMessage ??
+              (session.resume.canLaunch
+                ? `Opens in ${session.resume.terminal}.`
+                : session.resume.unavailableReason)}
+          </p>
+        </div>
       {/if}
-    </p>
+    </div>
 
     <dl class="headline-metrics">
       <div>
@@ -390,6 +438,65 @@
     text-transform: uppercase;
   }
 
+  .header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
+
+  .resume-panel {
+    flex: none;
+    padding-top: 0.25rem;
+    text-align: right;
+  }
+
+  .resume-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .resume-actions button {
+    padding: 0.6rem 0.85rem;
+    border: 1px solid #bac4bd;
+    border-radius: 0.45rem;
+    background: #fff;
+    color: #263229;
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .resume-actions button:hover:not(:disabled) {
+    border-color: #73847a;
+    background: #f7f8f6;
+  }
+
+  .resume-actions .resume-primary {
+    border-color: #334d3c;
+    background: #334d3c;
+    color: #fff;
+  }
+
+  .resume-actions .resume-primary:hover:not(:disabled) {
+    border-color: #263b2e;
+    background: #263b2e;
+  }
+
+  .resume-actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .resume-status {
+    max-width: 22rem;
+    margin-top: 0.45rem;
+    color: #607067;
+    font-size: 0.75rem;
+  }
+
   .headline-metrics,
   .metrics {
     display: grid;
@@ -609,5 +716,20 @@
 
   .legend .active {
     background: #46604f;
+  }
+
+  @media (max-width: 42rem) {
+    .header-top {
+      display: block;
+    }
+
+    .resume-panel {
+      margin-top: 1rem;
+      text-align: left;
+    }
+
+    .resume-actions {
+      justify-content: flex-start;
+    }
   }
 </style>

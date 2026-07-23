@@ -1,9 +1,16 @@
 import { error } from "@sveltejs/kit";
-import { query } from "$app/server";
+import { command, getRequestEvent, query } from "$app/server";
 
 import type { StandardSchema } from "$lib/remote-schema";
 import { openDatabase } from "$lib/server/db/database";
 import { AeyeReadModel } from "$lib/server/read-model";
+import {
+  createResumeDescriptor,
+  isLoopbackAddress,
+  launchResumeSession,
+  resumeAvailability,
+  ResumeLaunchError,
+} from "$lib/server/resume";
 
 const graphNodeLimit = 500;
 
@@ -26,6 +33,20 @@ const sessionIdSchema: StandardSchema<string, string> = {
     },
   },
 };
+
+function resumePayload(session: Parameters<typeof createResumeDescriptor>[0]) {
+  const descriptor = createResumeDescriptor(session);
+  if (descriptor === null) return null;
+  const availability = resumeAvailability(descriptor);
+  return {
+    label: descriptor.label,
+    command: descriptor.command,
+    resumesParent: descriptor.resumesParent,
+    canLaunch: availability.canLaunch,
+    terminal: availability.terminal,
+    unavailableReason: availability.reason,
+  };
+}
 
 export const getSession = query(sessionIdSchema, (sessionId) => {
   const db = openDatabase();
@@ -70,6 +91,7 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
         tokens: detail.summary.tokens,
         costUsd: detail.summary.costUsd,
       },
+      resume: resumePayload(detail.summary),
       links: detail.links.map(({ id, direction, kind, method, related }) => ({
         id,
         direction,
@@ -107,6 +129,32 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
         edges,
       },
     };
+  } finally {
+    db.$client.close();
+  }
+});
+
+export const launchSession = command(sessionIdSchema, async (sessionId) => {
+  const request = getRequestEvent();
+  if (!isLoopbackAddress(request.getClientAddress())) {
+    error(403, "Session launch is only available from this computer.");
+  }
+
+  const db = openDatabase();
+  try {
+    const detail = new AeyeReadModel(db).getSession(sessionId);
+    if (!detail) error(404, "Session not found");
+    const descriptor = createResumeDescriptor(detail.summary);
+    if (descriptor === null) {
+      error(409, "This session does not have valid resume metadata.");
+    }
+
+    try {
+      return await launchResumeSession(descriptor);
+    } catch (cause) {
+      if (cause instanceof ResumeLaunchError) error(409, cause.message);
+      error(500, "The terminal could not be opened.");
+    }
   } finally {
     db.$client.close();
   }
