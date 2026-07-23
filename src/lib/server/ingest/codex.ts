@@ -160,6 +160,7 @@ function baseEvent(envelope: JsonRecord, payload: JsonRecord, carriesSessionMeta
     content: missingContent,
     toolUses: [] as NormalizedToolUse[],
     toolResults: [] as NormalizedToolResult[],
+    annotations: [],
   };
 }
 

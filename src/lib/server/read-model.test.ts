@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { openDatabase } from "./db/database.ts";
-import { sessionLinks } from "./db/schema.ts";
+import { annotations, sessionLinks } from "./db/schema.ts";
 import { ClaudeIngestor } from "./ingest/ingestor.ts";
 import { AeyeReadModel } from "./read-model.ts";
 
@@ -175,6 +175,19 @@ await test("queries active project, session, usage, tool, and graph read models"
         createdAt: Date.parse("2026-07-14T10:00:01.000Z"),
       })
       .run();
+    const annotationEvent = db.query.events
+      .findFirst({ where: { sessionId: "session", seq: 1 } })
+      .sync();
+    assert.ok(annotationEvent);
+    db.insert(annotations)
+      .values({
+        sessionId: "session",
+        eventId: annotationEvent.id,
+        kind: "skill",
+        value: "deep-research",
+        createdAt: Date.parse("2026-07-14T10:00:01.000Z"),
+      })
+      .run();
     const readModel = new AeyeReadModel(db);
 
     assert.deepEqual(readModel.overview(), {
@@ -260,6 +273,17 @@ await test("queries active project, session, usage, tool, and graph read models"
     assert.equal(detail.graph.nodes.filter(({ isUsageDuplicate }) => isUsageDuplicate).length, 0);
     assert.equal(detail.models.length, 1);
     assert.equal(detail.tools[0]?.calls, 4);
+    assert.deepEqual(
+      detail.annotations.map(({ id: _id, ...annotation }) => annotation),
+      [
+        {
+          eventId: annotationEvent.id,
+          kind: "skill",
+          value: "deep-research",
+          createdAt: Date.parse("2026-07-14T10:00:01.000Z"),
+        },
+      ],
+    );
     assert.equal(detail.links.length, 1);
     assert.equal(detail.links[0]?.direction, "outgoing");
     assert.equal(detail.links[0]?.related.id, "session:agent:agent-worker");
@@ -322,6 +346,7 @@ await test("validates read model filters", () => {
     assert.throws(() => readModel.usageByModel({ sessionId: "" }), RangeError);
     assert.throws(() => readModel.toolUsage({ sessionId: "" }), RangeError);
     assert.throws(() => readModel.getSessionGraph(""), RangeError);
+    assert.throws(() => readModel.getSessionAnnotations(""), RangeError);
   } finally {
     db.$client.close();
     rmSync(directory, { recursive: true, force: true });

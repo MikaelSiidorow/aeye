@@ -100,15 +100,30 @@ The app held its database writer lock for the full run. A concurrent ingestion c
 the same database stopped with a readable process-specific error. Releasing the runtime
 closed both watchers and its stream subscriber. A stale lock was recovered on the next start.
 
+## Execution context
+
+The 20-file representative Claude corpus produced 30 annotations from structured fields and
+safe path categories. The graverun child session
+`0df2f937-2cc7-4976-bbf5-2512f2cbb327:agent:agent-a843805ee9e65b8ad` was labeled
+`codex:codex-rescue`. Its annotation references event 883 in the parent session, which is the
+matching Agent spawn event for `toolu_01CqjJuprgg7EKFq4pG9iE6J`.
+
+The corpus also recognized `codex:gpt-5-4-prompting`, `codex:rescue`, `deep-research`, and five
+scratchpad uses. Unqualified `general-purpose` agents were excluded. A second annotation
+derivation preserved every row and primary key. The read model and rendered session page
+contained the skill identifier without exposing descriptions, prompts, arguments, command
+bodies, or scratchpad filenames.
+
 ## Repository checks
 
 ```sh
 pnpm test
 pnpm check
+pnpm build
 ```
 
-All 33 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, and TypeScript
-checks passed.
+All 35 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, TypeScript checks,
+and the production build passed.
 
 ## Result
 
@@ -116,3 +131,5 @@ The M5 validation oracle passes. Full replay is deterministic, Claude accounting
 exactly with ccusage after the documented branch-liveness difference, and live tail updates
 arrive within one second. The M9 live UI oracle also passes for stream updates, targeted
 project filtering, reconnect state, singleton watcher cleanup, and database writer exclusion.
+The M10 execution-context oracle passes for structured skill provenance, scratchpad and
+worktree categories, idempotent derivation, and body-free rendering.

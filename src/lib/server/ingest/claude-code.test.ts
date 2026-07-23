@@ -170,6 +170,55 @@ await test("handles string and block content and detects interrupt markers", () 
   assert.equal(JSON.stringify(blockEvent).includes("PRIVATE_RESULT"), false);
 });
 
+await test("extracts only structured skill identifiers", () => {
+  const event = parseClaudeCodeEvent(
+    JSON.stringify({
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "skill",
+            name: "Skill",
+            input: { skill: "deep-research", args: "PRIVATE_SKILL_ARGUMENTS" },
+          },
+          {
+            type: "tool_use",
+            id: "rescue",
+            name: "Agent",
+            input: {
+              subagent_type: "codex:codex-rescue",
+              description: "PRIVATE_AGENT_DESCRIPTION",
+            },
+          },
+          {
+            type: "tool_use",
+            id: "generic",
+            name: "Agent",
+            input: { subagent_type: "general-purpose" },
+          },
+          {
+            type: "tool_use",
+            id: "invalid",
+            name: "Skill",
+            input: { skill: "PRIVATE SKILL WITH SPACES" },
+          },
+        ],
+      },
+    }),
+  );
+
+  assert.deepEqual(event.annotations, [
+    { kind: "skill", value: "deep-research" },
+    { kind: "skill", value: "codex:codex-rescue" },
+  ]);
+  const normalized = JSON.stringify(event);
+  assert.equal(normalized.includes("PRIVATE_SKILL_ARGUMENTS"), false);
+  assert.equal(normalized.includes("PRIVATE_AGENT_DESCRIPTION"), false);
+  assert.equal(normalized.includes("PRIVATE SKILL WITH SPACES"), false);
+});
+
 await test("normalizes known types and preserves unknown raw types", () => {
   const examples = [
     ["system", "system"],

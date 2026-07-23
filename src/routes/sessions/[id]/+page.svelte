@@ -13,6 +13,7 @@
   const sessionQuery = $derived(getSession(params.id));
   const session = $derived(await sessionQuery);
   const graph = $derived(layoutGraph(session.graph));
+  const contexts = $derived(groupAnnotations(session.annotations));
   const number = new Intl.NumberFormat("en");
   const cost = new Intl.NumberFormat("en", {
     style: "currency",
@@ -53,6 +54,52 @@
         ? "thread"
         : "session";
     return `${providerLabel(link.related.source)} ${role}`;
+  }
+
+  function groupAnnotations(input: Session["annotations"]) {
+    const grouped = new Map<
+      string,
+      Session["annotations"][number] & {
+        count: number;
+      }
+    >();
+    for (const annotation of input) {
+      const key = `${annotation.kind}\0${annotation.value}`;
+      const existing = grouped.get(key);
+      if (existing === undefined) grouped.set(key, { ...annotation, count: 1 });
+      else existing.count++;
+    }
+    return [...grouped.values()];
+  }
+
+  function contextLabel(kind: Session["annotations"][number]["kind"]) {
+    if (kind === "skill") return session.summary.isSubagent ? "Agent skill" : "Skill";
+    if (kind === "scratchpad") return "Scratchpad";
+    if (kind === "worktree") return "Worktree";
+    return "Context";
+  }
+
+  function contextValue(annotation: (typeof contexts)[number]) {
+    if (annotation.kind === "scratchpad") return "Used in this session";
+    if (annotation.kind === "worktree") {
+      if (annotation.value === "t3") return "T3 worktree";
+      if (annotation.value === "claude") return "Claude worktree";
+      return "Linked worktree";
+    }
+    return annotation.value;
+  }
+
+  function contextSource(annotation: (typeof contexts)[number]) {
+    if (annotation.kind === "skill" && session.summary.isSubagent) {
+      return "Declared by delegation metadata";
+    }
+    if (annotation.kind === "skill") {
+      return annotation.count === 1 ? "1 invocation" : `${annotation.count} invocations`;
+    }
+    if (annotation.kind === "scratchpad") {
+      return annotation.count === 1 ? "1 tool call" : `${annotation.count} tool calls`;
+    }
+    return "Working directory";
   }
 
   async function copyResumeCommand() {
@@ -210,6 +257,21 @@
       </div>
     </dl>
   </header>
+
+  {#if contexts.length > 0}
+    <section class="context" aria-labelledby="context-heading">
+      <h2 id="context-heading">Execution context</h2>
+      <ul>
+        {#each contexts as annotation (`${annotation.kind}:${annotation.value}`)}
+          <li>
+            <span class="context-kind">{contextLabel(annotation.kind)}</span>
+            <strong>{contextValue(annotation)}</strong>
+            <span class="context-source">{contextSource(annotation)}</span>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   {#if session.links.length > 0}
     <section class="connections" aria-labelledby="connections-heading">
@@ -548,6 +610,47 @@
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+
+  .context ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .context li {
+    min-width: 0;
+    padding-left: 0.75rem;
+    border-left: 3px solid #8c9c91;
+  }
+
+  .context-kind,
+  .context-source,
+  .context strong {
+    display: block;
+  }
+
+  .context-kind {
+    color: #607067;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .context strong {
+    margin-top: 0.15rem;
+    overflow-wrap: anywhere;
+    font-size: 1rem;
+  }
+
+  .context-source {
+    margin-top: 0.15rem;
+    color: #607067;
+    font-size: 0.75rem;
   }
 
   .connections a {

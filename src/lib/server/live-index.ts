@@ -7,6 +7,7 @@ import {
   type IngestErrorEvent,
   type SessionUpdatedEvent,
 } from "./ingest/ingestor.ts";
+import { backfillAnnotations } from "./ingest/derive.ts";
 import { deriveSessionLinks } from "./ingest/session-links.ts";
 import { startClaudeWatcher, startCodexWatcher, type SessionWatcher } from "./ingest/watcher.ts";
 
@@ -260,6 +261,7 @@ export class LiveIndex {
     await Promise.all(this.#watchers.map(({ ready }) => ready));
     await this.#claude.scan();
     await this.#codex.scan();
+    backfillAnnotations(this.#db);
     await this.#waitForFlush();
   }
 

@@ -214,7 +214,191 @@ await test("derives branch liveness, tool matches, tokens, turns, and cost", asy
       deadBranchEvents: 1,
       toolCalls: 3,
       unmatchedToolCalls: 2,
+      annotations: 0,
     });
+  } finally {
+    db.$client.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+await test("derives body-safe execution context and child skill provenance", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "aeye-annotations-"));
+  const root = join(directory, "projects");
+  const project = join(root, "project");
+  const sessionPath = join(project, "annotation-session.jsonl");
+  const agentDirectory = join(project, "annotation-session", "subagents");
+  const agentPath = join(agentDirectory, "agent-rescue.jsonl");
+  const sidecarPath = join(agentDirectory, "agent-rescue.meta.json");
+  const cwd = join(directory, ".t3", "worktrees", "infra", "feature");
+  mkdirSync(agentDirectory, { recursive: true });
+
+  writeFileSync(
+    sessionPath,
+    line({
+      type: "user",
+      sessionId: "annotation-session",
+      cwd,
+      uuid: "root",
+      timestamp: "2026-07-14T10:00:00.000Z",
+      message: { role: "user", content: "PRIVATE_ROOT_PROMPT" },
+    }) +
+      line({
+        type: "assistant",
+        sessionId: "annotation-session",
+        cwd,
+        uuid: "tools",
+        parentUuid: "root",
+        timestamp: "2026-07-14T10:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "skill-call",
+              name: "Skill",
+              input: { skill: "deep-research", args: "PRIVATE_SKILL_ARGUMENTS" },
+            },
+            {
+              type: "tool_use",
+              id: "agent-spawn",
+              name: "Agent",
+              input: {
+                subagent_type: "codex:codex-rescue",
+                prompt: "PRIVATE_AGENT_PROMPT",
+              },
+            },
+            {
+              type: "tool_use",
+              id: "generic-spawn",
+              name: "Agent",
+              input: { subagent_type: "general-purpose" },
+            },
+            {
+              type: "tool_use",
+              id: "scratchpad-write",
+              name: "Write",
+              input: {
+                file_path: join(cwd, "scratchpad", "notes.md"),
+                content: "PRIVATE_SCRATCHPAD_BODY",
+              },
+            },
+          ],
+        },
+      }),
+  );
+  writeFileSync(
+    agentPath,
+    line({
+      type: "assistant",
+      sessionId: "annotation-session",
+      cwd,
+      uuid: "agent-answer",
+      timestamp: "2026-07-14T10:00:02.000Z",
+      isSidechain: true,
+      message: { role: "assistant", content: "PRIVATE_AGENT_ANSWER" },
+    }),
+  );
+  writeFileSync(
+    sidecarPath,
+    JSON.stringify({
+      agentType: "codex:codex-rescue",
+      toolUseId: "agent-spawn",
+      spawnDepth: 1,
+      description: "PRIVATE_SIDECAR_DESCRIPTION",
+    }),
+  );
+
+  const db = openDatabase(join(directory, "test.sqlite"));
+  try {
+    const summary = await new ClaudeIngestor(db, { root }).scan();
+    assert.equal(summary.insertedEvents, 3);
+    const parentEvent = db.$client
+      .prepare(
+        "SELECT source_event_id AS sourceEventId FROM tool_calls WHERE session_id = ? AND tool_use_id = ?",
+      )
+      .get("annotation-session", "agent-spawn") as { sourceEventId: number } | undefined;
+    assert.ok(parentEvent);
+
+    const rows = db.$client
+      .prepare(
+        `SELECT id, session_id AS sessionId, event_id AS eventId, kind, value, created_at AS createdAt
+         FROM annotations
+         ORDER BY session_id, created_at, event_id, kind, value`,
+      )
+      .all()
+      .map((row) => ({ ...row }));
+    assert.deepEqual(
+      rows.map(({ id: _id, createdAt: _createdAt, ...row }) => row),
+      [
+        {
+          sessionId: "annotation-session",
+          eventId: null,
+          kind: "worktree",
+          value: "t3",
+        },
+        {
+          sessionId: "annotation-session",
+          eventId: parentEvent.sourceEventId,
+          kind: "scratchpad",
+          value: "scratchpad",
+        },
+        {
+          sessionId: "annotation-session",
+          eventId: parentEvent.sourceEventId,
+          kind: "skill",
+          value: "codex:codex-rescue",
+        },
+        {
+          sessionId: "annotation-session",
+          eventId: parentEvent.sourceEventId,
+          kind: "skill",
+          value: "deep-research",
+        },
+        {
+          sessionId: "annotation-session:agent:agent-rescue",
+          eventId: parentEvent.sourceEventId,
+          kind: "skill",
+          value: "codex:codex-rescue",
+        },
+        {
+          sessionId: "annotation-session:agent:agent-rescue",
+          eventId: null,
+          kind: "worktree",
+          value: "t3",
+        },
+      ],
+    );
+    assert.equal(JSON.stringify(rows).includes("general-purpose"), false);
+
+    deriveSession(db, "annotation-session");
+    deriveSession(db, "annotation-session:agent:agent-rescue");
+    const repeated = db.$client
+      .prepare(
+        `SELECT id, session_id AS sessionId, event_id AS eventId, kind, value, created_at AS createdAt
+         FROM annotations
+         ORDER BY session_id, created_at, event_id, kind, value`,
+      )
+      .all()
+      .map((row) => ({ ...row }));
+    assert.deepEqual(repeated, rows);
+
+    const serialized = JSON.stringify({
+      annotations: repeated,
+      tools: db.$client
+        .prepare("SELECT input_summary, target_path FROM tool_calls ORDER BY id")
+        .all(),
+    });
+    for (const privateValue of [
+      "PRIVATE_ROOT_PROMPT",
+      "PRIVATE_SKILL_ARGUMENTS",
+      "PRIVATE_AGENT_PROMPT",
+      "PRIVATE_SCRATCHPAD_BODY",
+      "PRIVATE_AGENT_ANSWER",
+      "PRIVATE_SIDECAR_DESCRIPTION",
+    ]) {
+      assert.equal(serialized.includes(privateValue), false);
+    }
   } finally {
     db.$client.close();
     rmSync(directory, { recursive: true, force: true });

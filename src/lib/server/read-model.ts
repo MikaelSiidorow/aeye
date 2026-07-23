@@ -15,6 +15,7 @@ import type { Database } from "./db/database.ts";
 import {
   activeToolCalls,
   activeUsageEvents,
+  annotations,
   events,
   projects,
   sessionLinks,
@@ -137,8 +138,17 @@ export interface SessionLink {
   related: SessionSummary;
 }
 
+export interface SessionAnnotation {
+  id: number;
+  eventId: number | null;
+  kind: (typeof annotations.$inferSelect)["kind"];
+  value: string;
+  createdAt: number;
+}
+
 export interface SessionDetail {
   summary: SessionSummary;
+  annotations: SessionAnnotation[];
   links: SessionLink[];
   models: ModelUsage[];
   tools: ToolUsage[];
@@ -604,6 +614,22 @@ export class AeyeReadModel {
     });
   }
 
+  getSessionAnnotations(sessionId: string): SessionAnnotation[] {
+    if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
+    return this.#db
+      .select({
+        id: annotations.id,
+        eventId: annotations.eventId,
+        kind: annotations.kind,
+        value: annotations.value,
+        createdAt: annotations.createdAt,
+      })
+      .from(annotations)
+      .where(eq(annotations.sessionId, sessionId))
+      .orderBy(asc(annotations.createdAt), asc(annotations.id))
+      .all();
+  }
+
   getSession(sessionId: string): SessionDetail | null {
     if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
     const row = this.#db
@@ -616,6 +642,7 @@ export class AeyeReadModel {
 
     return {
       summary: sessionSummary(row),
+      annotations: this.getSessionAnnotations(sessionId),
       links: this.getSessionLinks(sessionId),
       models: this.usageByModel({ sessionId }),
       tools: this.toolUsage({ sessionId }),

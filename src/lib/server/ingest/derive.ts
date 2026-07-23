@@ -1,11 +1,20 @@
 import { readFileSync } from "node:fs";
 import { gunzipSync, zstdDecompressSync } from "node:zlib";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Database } from "../db/database.ts";
-import { events, files, modelPricing, sessionStats, toolCalls } from "../db/schema.ts";
 import {
+  annotations,
+  events,
+  files,
+  modelPricing,
+  sessions,
+  sessionStats,
+  toolCalls,
+} from "../db/schema.ts";
+import {
+  annotationIdentifier,
   parseClaudeCodeEvent,
   type NormalizedEvent,
   type NormalizedToolUse,
@@ -14,6 +23,8 @@ import { CodexEventParser } from "./codex.ts";
 
 type EventRow = typeof events.$inferSelect;
 type ToolCallInsert = typeof toolCalls.$inferInsert;
+type AnnotationInsert = typeof annotations.$inferInsert;
+type SessionRow = typeof sessions.$inferSelect;
 
 interface DerivedEvent {
   row: EventRow;
@@ -41,6 +52,197 @@ export interface DerivationSummary {
   deadBranchEvents: number;
   toolCalls: number;
   unmatchedToolCalls: number;
+  annotations: number;
+}
+
+function structuralPathSegments(value: string) {
+  return value.split(/[\\/]+/).filter((segment) => segment.length > 0);
+}
+
+function scratchpadValue(targetPath: string) {
+  return structuralPathSegments(targetPath).includes("scratchpad") ? "scratchpad" : undefined;
+}
+
+function worktreeValue(cwd: string) {
+  const segments = structuralPathSegments(cwd);
+  const worktreesIndex = segments.lastIndexOf("worktrees");
+  if (worktreesIndex < 0) return undefined;
+  const owner = segments[worktreesIndex - 1];
+  if (owner === ".t3") return "t3";
+  if (owner === ".claude") return "claude";
+  return "worktree";
+}
+
+function sidecarSkill(db: Database, session: SessionRow) {
+  if (session.source !== "claude" || session.agentId === null) return undefined;
+  const sourceFiles = db
+    .select({ path: files.path })
+    .from(files)
+    .where(eq(files.sessionId, session.id))
+    .orderBy(asc(files.path))
+    .all();
+
+  for (const sourceFile of sourceFiles) {
+    if (!sourceFile.path.endsWith(".jsonl")) continue;
+    const sidecarPath = `${sourceFile.path.slice(0, -".jsonl".length)}.meta.json`;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(sidecarPath, "utf8"));
+    } catch {
+      continue;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
+    const sidecar = parsed as Record<string, unknown>;
+    const agentType = annotationIdentifier(sidecar["agentType"]);
+    if (agentType?.includes(":") !== true) continue;
+    const toolUseId = annotationIdentifier(sidecar["toolUseId"]);
+    const spawn =
+      toolUseId === undefined || session.parentId === null
+        ? undefined
+        : db
+            .select({
+              sourceEventId: toolCalls.sourceEventId,
+              startedAt: toolCalls.startedAt,
+            })
+            .from(toolCalls)
+            .where(
+              and(eq(toolCalls.sessionId, session.parentId), eq(toolCalls.toolUseId, toolUseId)),
+            )
+            .limit(1)
+            .get();
+    return {
+      agentType,
+      eventId: spawn?.sourceEventId ?? null,
+      createdAt: spawn?.startedAt ?? session.startedAt ?? 0,
+    };
+  }
+  return undefined;
+}
+
+function annotationRows(
+  db: Database,
+  session: SessionRow,
+  derivedEvents: DerivedEvent[],
+): AnnotationInsert[] {
+  const candidates: AnnotationInsert[] = [];
+  const push = (candidate: AnnotationInsert) => {
+    if (
+      candidates.some(
+        (existing) =>
+          existing.eventId === candidate.eventId &&
+          existing.kind === candidate.kind &&
+          existing.value === candidate.value,
+      )
+    ) {
+      return;
+    }
+    candidates.push(candidate);
+  };
+
+  for (const event of derivedEvents) {
+    const createdAt = event.row.timestampMs ?? session.startedAt ?? 0;
+    for (const annotation of event.normalized.annotations) {
+      push({
+        sessionId: session.id,
+        eventId: event.row.id,
+        kind: annotation.kind,
+        value: annotation.value,
+        createdAt,
+      });
+    }
+    for (const tool of event.normalized.toolUses) {
+      if (tool.targetPath === undefined) continue;
+      const value = scratchpadValue(tool.targetPath);
+      if (value === undefined) continue;
+      push({
+        sessionId: session.id,
+        eventId: event.row.id,
+        kind: "scratchpad",
+        value,
+        createdAt,
+      });
+    }
+  }
+
+  const worktree = worktreeValue(session.cwd);
+  if (worktree !== undefined) {
+    push({
+      sessionId: session.id,
+      eventId: null,
+      kind: "worktree",
+      value: worktree,
+      createdAt: session.startedAt ?? 0,
+    });
+  }
+
+  const skill = sidecarSkill(db, session);
+  if (skill !== undefined) {
+    push({
+      sessionId: session.id,
+      eventId: skill.eventId,
+      kind: "skill",
+      value: skill.agentType,
+      createdAt: skill.createdAt,
+    });
+  }
+
+  return candidates.sort(
+    (left, right) =>
+      left.createdAt - right.createdAt ||
+      (left.eventId ?? -1) - (right.eventId ?? -1) ||
+      left.kind.localeCompare(right.kind) ||
+      left.value.localeCompare(right.value),
+  );
+}
+
+function annotationKey(annotation: Pick<AnnotationInsert, "eventId" | "kind" | "value">) {
+  return JSON.stringify([annotation.eventId ?? null, annotation.kind, annotation.value]);
+}
+
+function reconcileAnnotations(db: Database, sessionId: string, desiredRows: AnnotationInsert[]) {
+  const desired = new Map(desiredRows.map((row) => [annotationKey(row), row]));
+  const existing = db
+    .select()
+    .from(annotations)
+    .where(eq(annotations.sessionId, sessionId))
+    .orderBy(asc(annotations.id))
+    .all();
+  const retained = new Set<string>();
+  const deleteIds: number[] = [];
+  const updateTimes: Array<{ id: number; createdAt: number }> = [];
+
+  for (const row of existing) {
+    const key = annotationKey(row);
+    const candidate = desired.get(key);
+    if (candidate === undefined || retained.has(key)) {
+      deleteIds.push(row.id);
+      continue;
+    }
+    retained.add(key);
+    if (row.createdAt !== candidate.createdAt) {
+      updateTimes.push({ id: row.id, createdAt: candidate.createdAt });
+    }
+  }
+  const inserts = [...desired].flatMap(([key, row]) => (retained.has(key) ? [] : [row]));
+
+  db.transaction((tx) => {
+    for (let index = 0; index < deleteIds.length; index += 500) {
+      tx.delete(annotations)
+        .where(inArray(annotations.id, deleteIds.slice(index, index + 500)))
+        .run();
+    }
+    for (const update of updateTimes) {
+      tx.update(annotations)
+        .set({ createdAt: update.createdAt })
+        .where(eq(annotations.id, update.id))
+        .run();
+    }
+    for (let index = 0; index < inserts.length; index += 250) {
+      tx.insert(annotations)
+        .values(inserts.slice(index, index + 250))
+        .run();
+    }
+  });
 }
 
 function findDeadBranchEvents(derivedEvents: DerivedEvent[]) {
@@ -324,7 +526,7 @@ function normalizedEvents(db: Database, sessionId: string) {
   const buffers = new Map<number, Buffer>();
   const codexParsers = new Map<number, CodexEventParser>();
 
-  return rows.map((row) => {
+  const derivedEvents = rows.map((row) => {
     const file = sourceFiles.get(row.fileId);
     if (file === undefined) throw new Error(`Missing source file ${row.fileId}`);
     let buffer = buffers.get(file.id);
@@ -352,12 +554,14 @@ function normalizedEvents(db: Database, sessionId: string) {
     }
     return { row, normalized } satisfies DerivedEvent;
   });
+  return { session, derivedEvents };
 }
 
 export function deriveSession(db: Database, sessionId: string): DerivationSummary {
-  const derivedEvents = normalizedEvents(db, sessionId);
+  const { session, derivedEvents } = normalizedEvents(db, sessionId);
   const deadEventIds = findDeadBranchEvents(derivedEvents);
   const { calls, activeCount } = toolCallRows(derivedEvents, deadEventIds);
+  const derivedAnnotations = annotationRows(db, session, derivedEvents);
   const pricing = db.select().from(modelPricing).all();
   const stats = sessionStatistics(
     sessionId,
@@ -387,6 +591,7 @@ export function deriveSession(db: Database, sessionId: string): DerivationSummar
       .onConflictDoUpdate({ target: sessionStats.sessionId, set: stats })
       .run();
   });
+  reconcileAnnotations(db, sessionId, derivedAnnotations);
 
   return {
     sessionId,
@@ -394,7 +599,39 @@ export function deriveSession(db: Database, sessionId: string): DerivationSummar
     toolCalls: calls.length,
     unmatchedToolCalls: calls.filter(({ status }) => status !== "completed" && status !== "error")
       .length,
+    annotations: derivedAnnotations.length,
   };
+}
+
+export function deriveSessionAnnotations(db: Database, sessionId: string) {
+  const { session, derivedEvents } = normalizedEvents(db, sessionId);
+  const rows = annotationRows(db, session, derivedEvents);
+  reconcileAnnotations(db, sessionId, rows);
+  return rows.length;
+}
+
+export function deriveAllAnnotations(db: Database) {
+  const sessionIds = db
+    .selectDistinct({ sessionId: events.sessionId })
+    .from(events)
+    .orderBy(asc(events.sessionId))
+    .all()
+    .map(({ sessionId }) => sessionId);
+  return sessionIds.map((sessionId) => ({
+    sessionId,
+    annotations: deriveSessionAnnotations(db, sessionId),
+  }));
+}
+
+export function backfillAnnotations(db: Database) {
+  const row = db.$client
+    .prepare(
+      `SELECT
+         EXISTS(SELECT 1 FROM events LIMIT 1) AS hasEvents,
+         EXISTS(SELECT 1 FROM annotations LIMIT 1) AS hasAnnotations`,
+    )
+    .get() as { hasEvents: number; hasAnnotations: number } | undefined;
+  return row?.hasEvents === 1 && row.hasAnnotations === 0 ? deriveAllAnnotations(db) : [];
 }
 
 export function deriveAllSessions(db: Database) {

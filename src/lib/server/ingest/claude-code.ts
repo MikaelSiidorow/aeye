@@ -24,6 +24,11 @@ export interface NormalizedToolResult {
   isError: boolean;
 }
 
+export interface NormalizedAnnotation {
+  kind: "skill";
+  value: string;
+}
+
 interface NormalizedEventBase {
   sessionId: string | undefined;
   parentSessionId: string | undefined;
@@ -48,6 +53,7 @@ interface NormalizedEventBase {
   content: ContentSummary;
   toolUses: NormalizedToolUse[];
   toolResults: NormalizedToolResult[];
+  annotations: NormalizedAnnotation[];
 }
 
 export interface NormalizedUserEvent extends NormalizedEventBase {
@@ -137,6 +143,7 @@ const metaTypes = new Set([
   "summary",
 ]);
 const targetPathKeys = ["file_path", "path", "notebook_path", "target_path", "cwd"];
+const annotationIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,127}$/;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -150,6 +157,10 @@ function stringField(value: JsonRecord, key: string) {
 function integerField(value: JsonRecord, key: string) {
   const field = value[key];
   return typeof field === "number" && Number.isSafeInteger(field) && field >= 0 ? field : 0;
+}
+
+export function annotationIdentifier(value: unknown) {
+  return typeof value === "string" && annotationIdentifierPattern.test(value) ? value : undefined;
 }
 
 function messageRecord(value: JsonRecord) {
@@ -241,7 +252,8 @@ function extractTools(value: JsonRecord) {
   const content = messageRecord(value)?.["content"];
   const toolUses: NormalizedToolUse[] = [];
   const toolResults: NormalizedToolResult[] = [];
-  if (!Array.isArray(content)) return { toolUses, toolResults };
+  const annotations: NormalizedAnnotation[] = [];
+  if (!Array.isArray(content)) return { toolUses, toolResults, annotations };
 
   for (const block of content) {
     if (!isRecord(block)) continue;
@@ -257,6 +269,17 @@ function extractTools(value: JsonRecord) {
         inputSummary: summarizeToolInput(block["input"]),
         targetPath: extractTargetPath(block["input"]),
       });
+      const input = block["input"];
+      if (isRecord(input) && name === "Skill") {
+        const skill = annotationIdentifier(input["skill"]);
+        if (skill !== undefined) annotations.push({ kind: "skill", value: skill });
+      }
+      if (isRecord(input) && name === "Agent") {
+        const agentType = annotationIdentifier(input["subagent_type"]);
+        if (agentType?.includes(":") === true) {
+          annotations.push({ kind: "skill", value: agentType });
+        }
+      }
     }
 
     if (block["type"] === "tool_result") {
@@ -266,7 +289,16 @@ function extractTools(value: JsonRecord) {
     }
   }
 
-  return { toolUses, toolResults };
+  return {
+    toolUses,
+    toolResults,
+    annotations: annotations.filter(
+      (annotation, index) =>
+        annotations.findIndex(
+          (candidate) => candidate.kind === annotation.kind && candidate.value === annotation.value,
+        ) === index,
+    ),
+  };
 }
 
 function hasInterruptMarker(value: unknown): boolean {

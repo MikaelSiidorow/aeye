@@ -10,6 +10,7 @@ Dashboard totals describe the active conversation branch.
 - Dead-branch usage is excluded from active totals and returned separately as `deadBranch`.
 - Tool aggregates exclude calls sourced from replayed or dead-branch events.
 - Session graphs contain both active and dead branches so the UI can render the DAG.
+- Execution context contains only structured skill identifiers and category labels for scratchpads and worktrees.
 - No method reads or returns message bodies or complete tool inputs.
 
 The database views encode the shared filters:
@@ -20,22 +21,23 @@ The database views encode the shared filters:
 
 ## Query surface
 
-| Method                       | Result                                                      |
-| ---------------------------- | ----------------------------------------------------------- |
-| `overview()`                 | Global project, session, turn, tool, token, and cost totals |
-| `listProjects()`             | Project summaries ordered by latest activity                |
-| `listSessions(options)`      | Paginated session summaries with an optional project filter |
-| `usageByDay(options)`        | Active usage grouped in a requested IANA timezone           |
-| `usageByModel(options)`      | Active usage and session counts grouped by model            |
-| `toolUsage(options)`         | Tool status totals plus average, p50, and p95 duration      |
-| `getSessionGraph(sessionId)` | Safe event metadata and parent-child edges                  |
-| `getSession(sessionId)`      | Session summary, model usage, tool usage, and graph         |
+| Method                             | Result                                                      |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `overview()`                       | Global project, session, turn, tool, token, and cost totals |
+| `listProjects()`                   | Project summaries ordered by latest activity                |
+| `listSessions(options)`            | Paginated session summaries with an optional project filter |
+| `usageByDay(options)`              | Active usage grouped in a requested IANA timezone           |
+| `usageByModel(options)`            | Active usage and session counts grouped by model            |
+| `toolUsage(options)`               | Tool status totals plus average, p50, and p95 duration      |
+| `getSessionGraph(sessionId)`       | Safe event metadata and parent-child edges                  |
+| `getSessionAnnotations(sessionId)` | Body-safe execution context with source event references    |
+| `getSession(sessionId)`            | Session summary, context, links, usage, tools, and graph    |
 
 Breakdown methods accept project and session filters. Session lists allow 1 to 500 results per page. Invalid identifiers, pagination values, and timezones fail at the query boundary.
 
 ## Validation
 
-The synthetic oracle covers parent and subagent replay, a dead branch, pagination, four tool duration samples, graph edges, and the absence of private source content in serialized results.
+The synthetic oracle covers parent and subagent replay, a dead branch, pagination, four tool duration samples, graph edges, execution context, and the absence of private source content in serialized results.
 
 The full-history validation database produced:
 
@@ -50,4 +52,4 @@ The full-history validation database produced:
 | Dead-branch tokens |    270,320 |
 | Six-query suite    |      94 ms |
 
-The overview, daily, model, and session token totals reconciled exactly. All 19 repository tests and the full static check passed.
+The overview, daily, model, and session token totals reconciled exactly. All 35 repository tests and the full static check passed.

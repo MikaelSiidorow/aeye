@@ -93,6 +93,13 @@ function readSession(sessionId: string) {
         costUsd: detail.summary.costUsd,
       },
       resume: resumePayload(detail.summary),
+      annotations: detail.annotations.map(({ id, eventId, kind, value, createdAt }) => ({
+        id,
+        eventId,
+        kind,
+        value,
+        createdAt,
+      })),
       links: detail.links.map(({ id, direction, kind, method, related }) => ({
         id,
         direction,
