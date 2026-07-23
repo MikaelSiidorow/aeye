@@ -134,6 +134,22 @@ name in the heading and breadcrumbs. Appending a Claude title event updated the 
 through the existing live stream. Provider titles, descriptions, and message previews remained
 absent from Aeye’s tables.
 
+## Derivation recovery
+
+A live Codex rollout contained 140 tool-use envelopes with 139 distinct provider call IDs. One
+completed `update_plan` call was replayed with the same ID. Eighteen other calls had replayed
+result envelopes. Derivation now keeps the first tool use and first matching result for each
+provider call ID.
+
+The failing live index was cloned with SQLite’s backup API. Startup recovery identified two
+suspicious sessions, rebuilt the affected Codex thread as 139 calls with 139 distinct IDs, and
+left no duplicate groups. A second recovery pass was a no-op. The optimized recovery completed
+in about three seconds without re-deriving the other 472 sessions.
+
+The ingestion CLI was then run against another fresh live-index clone while its source files
+continued to advance. It processed the new Claude and Codex events, recovered derivation, and
+completed with zero failed files.
+
 ## Repository checks
 
 ```sh
@@ -142,7 +158,7 @@ pnpm check
 pnpm build
 ```
 
-All 36 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, TypeScript checks,
+All 37 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, TypeScript checks,
 and the production build passed.
 
 ## Result
@@ -155,3 +171,5 @@ The M10 execution-context oracle passes for structured skill provenance, scratch
 worktree categories, idempotent derivation, and body-free rendering.
 The M11 display-name oracle passes for both providers, subagent task names, bounded message
 fallbacks, live title updates, and zero title persistence in Aeye.
+Tool-call derivation also tolerates provider envelope replays and automatically repairs sessions
+whose indexed events are newer than their derived statistics.

@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { openDatabase } from "../db/database.ts";
 import { modelPricing } from "../db/schema.ts";
-import { deriveSession } from "./derive.ts";
+import { deriveSession, deriveStaleSessions } from "./derive.ts";
 import { ClaudeIngestor } from "./ingestor.ts";
 
 function line(value: unknown) {
@@ -399,6 +399,140 @@ await test("derives body-safe execution context and child skill provenance", asy
     ]) {
       assert.equal(serialized.includes(privateValue), false);
     }
+  } finally {
+    db.$client.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+await test("coalesces replayed tool-use and result IDs", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "aeye-tool-replay-"));
+  const root = join(directory, "projects");
+  const project = join(root, "project");
+  const sessionPath = join(project, "tool-replay.jsonl");
+  const cwd = join(directory, "work");
+  mkdirSync(project, { recursive: true });
+
+  writeFileSync(
+    sessionPath,
+    line({
+      type: "assistant",
+      sessionId: "tool-replay",
+      cwd,
+      uuid: "first-use",
+      timestamp: "2026-07-14T10:00:00.000Z",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "replayed-id",
+            name: "FirstTool",
+            input: { prompt: "PRIVATE_FIRST_TOOL_INPUT" },
+          },
+        ],
+      },
+    }) +
+      line({
+        type: "user",
+        sessionId: "tool-replay",
+        cwd,
+        uuid: "first-result",
+        parentUuid: "first-use",
+        timestamp: "2026-07-14T10:00:00.100Z",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "replayed-id",
+              content: "PRIVATE_FIRST_RESULT",
+            },
+          ],
+        },
+      }) +
+      line({
+        type: "assistant",
+        sessionId: "tool-replay",
+        cwd,
+        uuid: "replayed-use",
+        parentUuid: "first-result",
+        timestamp: "2026-07-14T10:00:01.000Z",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_use",
+              id: "replayed-id",
+              name: "ReplayedTool",
+              input: { prompt: "PRIVATE_REPLAYED_TOOL_INPUT" },
+            },
+          ],
+        },
+      }) +
+      line({
+        type: "user",
+        sessionId: "tool-replay",
+        cwd,
+        uuid: "replayed-result",
+        parentUuid: "replayed-use",
+        timestamp: "2026-07-14T10:00:01.100Z",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "replayed-id",
+              content: "PRIVATE_REPLAYED_RESULT",
+            },
+          ],
+        },
+      }),
+  );
+
+  const db = openDatabase(join(directory, "test.sqlite"));
+  try {
+    const summary = await new ClaudeIngestor(db, { root }).scan();
+    assert.equal(summary.insertedEvents, 4);
+    const calls = db.$client
+      .prepare(
+        `SELECT
+           tc.tool_use_id AS toolUseId,
+           tc.name,
+           source.seq AS sourceSeq,
+           result.seq AS resultSeq,
+           tc.duration_ms AS durationMs,
+           tc.status
+         FROM tool_calls tc
+         JOIN events source ON source.id = tc.source_event_id
+         LEFT JOIN events result ON result.id = tc.result_event_id
+         WHERE tc.session_id = ?`,
+      )
+      .all("tool-replay")
+      .map((row) => ({ ...row }));
+    assert.deepEqual(calls, [
+      {
+        toolUseId: "replayed-id",
+        name: "FirstTool",
+        sourceSeq: 0,
+        resultSeq: 1,
+        durationMs: 100,
+        status: "completed",
+      },
+    ]);
+    assert.equal(
+      db.query.sessionStats.findFirst({ where: { sessionId: "tool-replay" } }).sync()?.toolCalls,
+      1,
+    );
+    assert.equal(deriveSession(db, "tool-replay").toolCalls, 1);
+    db.$client
+      .prepare("UPDATE session_stats SET ended_at = 0, updated_at = 0 WHERE session_id = ?")
+      .run("tool-replay");
+    assert.deepEqual(
+      deriveStaleSessions(db).summaries.map(({ sessionId }) => sessionId),
+      ["tool-replay"],
+    );
+    assert.equal(deriveStaleSessions(db).summaries.length, 0);
   } finally {
     db.$client.close();
     rmSync(directory, { recursive: true, force: true });

@@ -273,13 +273,16 @@ function findDeadBranchEvents(derivedEvents: DerivedEvent[]) {
 
 function toolCallRows(derivedEvents: DerivedEvent[], deadEventIds: Set<number>) {
   const pending = new Map<string, PendingToolCall>();
+  const seenToolUseIds = new Set<string>();
   const calls: ToolCallInsert[] = [];
   let latestInterruptSeq = -1;
 
   for (const event of derivedEvents) {
     if (event.normalized.isInterrupt) latestInterruptSeq = event.row.seq;
     for (const tool of event.normalized.toolUses) {
-      if (!pending.has(tool.toolUseId)) pending.set(tool.toolUseId, { source: event, tool });
+      if (seenToolUseIds.has(tool.toolUseId)) continue;
+      seenToolUseIds.add(tool.toolUseId);
+      pending.set(tool.toolUseId, { source: event, tool });
     }
     for (const result of event.normalized.toolResults) {
       const match = pending.get(result.toolUseId);
@@ -378,8 +381,12 @@ function sessionStatistics(
   let tokDeadBranch = 0;
   let startedAt: number | undefined;
   let endedAt: number | undefined;
+  let latestEventAt: number | undefined;
 
   for (const { row, normalized } of derivedEvents) {
+    if (row.timestampMs !== null) {
+      latestEventAt = Math.max(latestEventAt ?? row.timestampMs, row.timestampMs);
+    }
     if (row.isUsageDuplicate) continue;
     if (deadEventIds.has(row.id)) {
       tokDeadBranch +=
@@ -416,7 +423,7 @@ function sessionStatistics(
     tokCacheWrite,
     tokDeadBranch,
     costUsd,
-    updatedAt: endedAt ?? startedAt ?? 0,
+    updatedAt: latestEventAt ?? endedAt ?? startedAt ?? 0,
   } satisfies typeof sessionStats.$inferInsert;
 }
 
@@ -642,6 +649,54 @@ export function deriveAllSessions(db: Database) {
     .all()
     .map(({ sessionId }) => sessionId);
   return deriveSessions(db, sessionIds);
+}
+
+export function deriveStaleSessions(db: Database) {
+  const sessionIds = (
+    db.$client
+      .prepare(
+        `SELECT source.session_id AS sessionId
+         FROM (
+           SELECT
+             session_id,
+             max(coalesce(timestamp_ms, 0)) AS latest_event_at,
+             max(case when is_meta = 0 then coalesce(timestamp_ms, 0) end) AS latest_non_meta_at
+           FROM events
+           GROUP BY session_id
+         ) source
+         LEFT JOIN session_stats stats ON stats.session_id = source.session_id
+         WHERE stats.session_id IS NULL
+            OR (
+              stats.updated_at < source.latest_event_at
+              AND (
+                stats.updated_at > coalesce(stats.ended_at, stats.started_at, 0)
+                OR coalesce(stats.ended_at, -1) < coalesce(source.latest_non_meta_at, -1)
+              )
+            )
+         ORDER BY source.session_id`,
+      )
+      .all() as unknown as Array<{ sessionId: string }>
+  ).map(({ sessionId }) => sessionId);
+  const result =
+    sessionIds.length === 0
+      ? { usageDuplicates: 0, summaries: [] }
+      : deriveSessions(db, sessionIds);
+  db.$client
+    .prepare(
+      `UPDATE session_stats
+       SET updated_at = (
+         SELECT max(coalesce(events.timestamp_ms, 0))
+         FROM events
+         WHERE events.session_id = session_stats.session_id
+       )
+       WHERE updated_at < (
+         SELECT max(coalesce(events.timestamp_ms, 0))
+         FROM events
+         WHERE events.session_id = session_stats.session_id
+       )`,
+    )
+    .run();
+  return result;
 }
 
 export function deriveSessions(

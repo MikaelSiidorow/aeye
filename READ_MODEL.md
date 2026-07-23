@@ -54,4 +54,4 @@ The full-history validation database produced:
 | Dead-branch tokens |    270,320 |
 | Six-query suite    |      94 ms |
 
-The overview, daily, model, and session token totals reconciled exactly. All 36 repository tests and the full static check passed.
+The overview, daily, model, and session token totals reconciled exactly. All 37 repository tests and the full static check passed.
