@@ -76,6 +76,7 @@ function readSession(sessionId: string) {
 
     return {
       summary: {
+        displayName: detail.summary.displayName,
         projectId: detail.summary.projectId,
         projectName: detail.summary.projectName,
         parentId: detail.summary.parentId,
@@ -92,6 +93,13 @@ function readSession(sessionId: string) {
         tokens: detail.summary.tokens,
         costUsd: detail.summary.costUsd,
       },
+      parent:
+        detail.parent === null
+          ? null
+          : {
+              id: detail.parent.id,
+              displayName: detail.parent.displayName,
+            },
       resume: resumePayload(detail.summary),
       annotations: detail.annotations.map(({ id, eventId, kind, value, createdAt }) => ({
         id,
@@ -107,6 +115,7 @@ function readSession(sessionId: string) {
         method,
         related: {
           id: related.id,
+          displayName: related.displayName,
           projectId: related.projectId,
           projectName: related.projectName,
           parentId: related.parentId,

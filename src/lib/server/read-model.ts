@@ -21,6 +21,8 @@ import {
   sessionLinks,
   sessionReadModel,
 } from "./db/schema.ts";
+import { env } from "./env.ts";
+import { SessionNameResolver } from "./session-name.ts";
 
 export interface TokenTotals {
   input: number;
@@ -53,6 +55,7 @@ export interface ProjectSummary extends Omit<Overview, "projectCount"> {
 
 export interface SessionSummary {
   id: string;
+  displayName: string;
   sourceSessionId: string;
   projectId: number;
   projectName: string;
@@ -148,6 +151,7 @@ export interface SessionAnnotation {
 
 export interface SessionDetail {
   summary: SessionSummary;
+  parent: SessionSummary | null;
   annotations: SessionAnnotation[];
   links: SessionLink[];
   models: ModelUsage[];
@@ -259,9 +263,10 @@ function dateKey(formatter: Intl.DateTimeFormat, timestampMs: number) {
 
 type SessionRow = typeof sessionReadModel.$inferSelect;
 
-function sessionSummary(row: SessionRow): SessionSummary {
+function sessionSummary(row: SessionRow, displayName: string): SessionSummary {
   return {
     id: row.id,
+    displayName,
     sourceSessionId: row.sourceSessionId,
     projectId: row.projectId,
     projectName: row.projectName,
@@ -295,9 +300,20 @@ function sessionSummary(row: SessionRow): SessionSummary {
 
 export class AeyeReadModel {
   readonly #db: Database;
+  readonly #names: SessionNameResolver;
 
-  constructor(db: Database) {
+  constructor(db: Database, { codexHomePath = env.codexHomePath } = {}) {
     this.#db = db;
+    this.#names = new SessionNameResolver(db, codexHomePath);
+  }
+
+  #sessionSummaries(rows: SessionRow[]) {
+    const names = this.#names.resolve(rows);
+    return rows.map((row) => {
+      const displayName = names.get(row.id);
+      if (displayName === undefined) throw new Error(`Missing display name for ${row.id}`);
+      return sessionSummary(row, displayName);
+    });
   }
 
   listProjects(): ProjectSummary[] {
@@ -408,7 +424,7 @@ export class AeyeReadModel {
     const validOffset = finiteInteger(offset, "offset", 0);
     if (validLimit > 500) throw new RangeError("limit must not exceed 500");
 
-    return this.#db
+    const rows = this.#db
       .select()
       .from(sessionReadModel)
       .where(
@@ -420,8 +436,8 @@ export class AeyeReadModel {
       )
       .limit(validLimit)
       .offset(validOffset)
-      .all()
-      .map(sessionSummary);
+      .all();
+    return this.#sessionSummaries(rows);
   }
 
   usageByDay({ projectId, sessionId, timeZone = "UTC" }: DailyUsageOptions = {}): DailyUsage[] {
@@ -589,12 +605,13 @@ export class AeyeReadModel {
     if (relatedIds.length === 0) return [];
 
     const relatedById = new Map(
-      this.#db
-        .select()
-        .from(sessionReadModel)
-        .where(inArray(sessionReadModel.id, relatedIds))
-        .all()
-        .map((row) => [row.id, sessionSummary(row)]),
+      this.#sessionSummaries(
+        this.#db
+          .select()
+          .from(sessionReadModel)
+          .where(inArray(sessionReadModel.id, relatedIds))
+          .all(),
+      ).map((summary) => [summary.id, summary]),
     );
 
     return links.flatMap((link) => {
@@ -630,6 +647,17 @@ export class AeyeReadModel {
       .all();
   }
 
+  getSessionSummary(sessionId: string) {
+    if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
+    const row = this.#db
+      .select()
+      .from(sessionReadModel)
+      .where(eq(sessionReadModel.id, sessionId))
+      .limit(1)
+      .get();
+    return row === undefined ? null : (this.#sessionSummaries([row])[0] ?? null);
+  }
+
   getSession(sessionId: string): SessionDetail | null {
     if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
     const row = this.#db
@@ -639,9 +667,23 @@ export class AeyeReadModel {
       .limit(1)
       .get();
     if (row === undefined) return null;
+    const parentRow =
+      row.parentId === null
+        ? undefined
+        : this.#db
+            .select()
+            .from(sessionReadModel)
+            .where(eq(sessionReadModel.id, row.parentId))
+            .limit(1)
+            .get();
+    const [summary, parent] = this.#sessionSummaries(
+      parentRow === undefined ? [row] : [row, parentRow],
+    );
+    if (summary === undefined) throw new Error(`Missing session summary for ${sessionId}`);
 
     return {
-      summary: sessionSummary(row),
+      summary,
+      parent: parent ?? null,
       annotations: this.getSessionAnnotations(sessionId),
       links: this.getSessionLinks(sessionId),
       models: this.usageByModel({ sessionId }),

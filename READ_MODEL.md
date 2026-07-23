@@ -11,7 +11,9 @@ Dashboard totals describe the active conversation branch.
 - Tool aggregates exclude calls sourced from replayed or dead-branch events.
 - Session graphs contain both active and dead branches so the UI can render the DAG.
 - Execution context contains only structured skill identifiers and category labels for scratchpads and worktrees.
-- No method reads or returns message bodies or complete tool inputs.
+- Session display names resolve from provider titles and subagent descriptions at read time. They are not stored in Aeye.
+- A missing title falls back to at most eight words from the first meaningful user message.
+- No method returns complete message bodies or complete tool inputs.
 
 The database views encode the shared filters:
 
@@ -25,7 +27,7 @@ The database views encode the shared filters:
 | ---------------------------------- | ----------------------------------------------------------- |
 | `overview()`                       | Global project, session, turn, tool, token, and cost totals |
 | `listProjects()`                   | Project summaries ordered by latest activity                |
-| `listSessions(options)`            | Paginated session summaries with an optional project filter |
+| `listSessions(options)`            | Named, paginated session summaries with a project filter    |
 | `usageByDay(options)`              | Active usage grouped in a requested IANA timezone           |
 | `usageByModel(options)`            | Active usage and session counts grouped by model            |
 | `toolUsage(options)`               | Tool status totals plus average, p50, and p95 duration      |
@@ -37,7 +39,7 @@ Breakdown methods accept project and session filters. Session lists allow 1 to 5
 
 ## Validation
 
-The synthetic oracle covers parent and subagent replay, a dead branch, pagination, four tool duration samples, graph edges, execution context, and the absence of private source content in serialized results.
+The synthetic oracle covers parent and subagent replay, a dead branch, pagination, four tool duration samples, graph edges, execution context, provider title precedence, bounded message previews, and the absence of complete private source content in serialized results.
 
 The full-history validation database produced:
 
@@ -52,4 +54,4 @@ The full-history validation database produced:
 | Dead-branch tokens |    270,320 |
 | Six-query suite    |      94 ms |
 
-The overview, daily, model, and session token totals reconciled exactly. All 35 repository tests and the full static check passed.
+The overview, daily, model, and session token totals reconciled exactly. All 36 repository tests and the full static check passed.

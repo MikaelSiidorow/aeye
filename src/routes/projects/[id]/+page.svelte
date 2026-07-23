@@ -129,7 +129,7 @@
               <div class="session-identity">
                 <div class="session-title">
                   <span class="badge root-badge">Root</span>
-                  <strong>Main conversation</strong>
+                  <strong>{group.root.displayName}</strong>
                 </div>
                 <time
                   datetime={rootTimestamp === null
@@ -159,14 +159,14 @@
                   <span>Delegated from this root session</span>
                 </div>
                 <ol class="subagent-list">
-                  {#each group.children as child, index}
+                  {#each group.children as child}
                     {@const childTimestamp = activityTimestamp(child)}
                     <li>
                       <a class="session-row child-row" href={sessionHref(child)}>
                         <div class="session-identity">
                           <div class="session-title">
                             <span class="badge subagent-badge">Subagent</span>
-                            <strong>Delegated run {number.format(index + 1)}</strong>
+                            <strong>{child.displayName}</strong>
                           </div>
                           <time
                             datetime={childTimestamp === null
@@ -201,14 +201,14 @@
                 <span>Their root sessions are outside this result window</span>
               </div>
               <ol class="subagent-list">
-                {#each hierarchy.orphans as child, index}
+                {#each hierarchy.orphans as child}
                   {@const childTimestamp = activityTimestamp(child)}
                   <li>
                     <a class="session-row child-row" href={sessionHref(child)}>
                       <div class="session-identity">
                         <div class="session-title">
                           <span class="badge subagent-badge">Subagent</span>
-                          <strong>Delegated run {number.format(index + 1)}</strong>
+                          <strong>{child.displayName}</strong>
                         </div>
                         <time
                           datetime={childTimestamp === null

@@ -29,6 +29,7 @@ function readProject(projectId: number) {
 
     const sessions = readModel.listSessions({ projectId, limit: 100 }).map((session) => ({
       id: session.id,
+      displayName: session.displayName,
       parentId: session.parentId,
       isSubagent: session.agentId !== null,
       userTurns: session.userTurns,

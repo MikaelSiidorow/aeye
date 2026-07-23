@@ -47,15 +47,6 @@
     return link.direction === "outgoing" ? "Delegated to" : "Delegated from";
   }
 
-  function connectionTitle(link: Session["links"][number]) {
-    const role = link.related.isSubagent
-      ? "subagent"
-      : link.related.source === "codex"
-        ? "thread"
-        : "session";
-    return `${providerLabel(link.related.source)} ${role}`;
-  }
-
   function groupAnnotations(input: Session["annotations"]) {
     const grouped = new Map<
       string,
@@ -165,7 +156,7 @@
 </script>
 
 <svelte:head>
-  <title>{session.summary.isSubagent ? "Subagent" : "Session"} · {session.summary.projectName} · Aeye</title>
+  <title>{session.summary.displayName} · {session.summary.projectName} · Aeye</title>
   <meta name="description" content="Local session statistics for {session.summary.projectName}" />
 </svelte:head>
 
@@ -174,10 +165,15 @@
     items={[
       { label: "Projects", href: "/" },
       { label: session.summary.projectName, href: `/projects/${session.summary.projectId}` },
-      ...(session.summary.parentId === null
+      ...(session.parent === null
         ? []
-        : [{ label: "Main thread", href: `/sessions/${encodeURIComponent(session.summary.parentId)}` }]),
-      { label: session.summary.isSubagent ? "Subagent" : "Session" },
+        : [
+            {
+              label: session.parent.displayName,
+              href: `/sessions/${encodeURIComponent(session.parent.id)}`,
+            },
+          ]),
+      { label: session.summary.displayName },
     ]}
   />
 
@@ -194,7 +190,7 @@
             reconnect={() => sessionQuery.reconnect()}
           />
         </div>
-        <h1>{session.summary.isSubagent ? "Subagent" : "Session"}</h1>
+        <h1>{session.summary.displayName}</h1>
         <p>
           <time
             datetime={session.summary.startedAt === null
@@ -282,9 +278,10 @@
             <a href={`/sessions/${encodeURIComponent(link.related.id)}`}>
               <span class="connection-copy">
                 <span class="connection-relation">{connectionLabel(link)}</span>
-                <strong>{connectionTitle(link)}</strong>
+                <strong>{link.related.displayName}</strong>
                 <span class="connection-meta">
-                  {link.related.projectName} · {formatLocalDateTime(link.related.startedAt)}
+                  {providerLabel(link.related.source)} · {link.related.projectName} ·
+                  {formatLocalDateTime(link.related.startedAt)}
                 </span>
               </span>
               <span class="connection-arrow" aria-hidden="true">→</span>
@@ -496,6 +493,7 @@
     margin-bottom: 0.25rem;
     font-size: clamp(2rem, 7vw, 3.5rem);
     letter-spacing: -0.05em;
+    overflow-wrap: anywhere;
   }
 
   h2 {

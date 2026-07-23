@@ -114,6 +114,26 @@ derivation preserved every row and primary key. The read model and rendered sess
 contained the skill identifier without exposing descriptions, prompts, arguments, command
 bodies, or scratchpad filenames.
 
+## Session display names
+
+Display names were resolved against the full local index without adding a database column.
+Claude custom titles took precedence over AI titles. Claude subagents used their task
+descriptions. Codex explicit names took precedence over generated thread titles. Missing
+titles used at most eight normalized words from the first meaningful user message.
+
+| Session kind     | Sessions | Named | Generic fallback |
+| ---------------- | -------: | ----: | ---------------: |
+| Claude roots     |        8 |     8 |                0 |
+| Claude subagents |       22 |    22 |                0 |
+| Codex roots      |      419 |   418 |                1 |
+| Codex subagents  |       25 |    25 |                0 |
+
+All 474 sessions resolved in 401 ms. The rendered project tree contained no generic “Main
+conversation” or numbered “Delegated run” labels. The graverun session page used its resolved
+name in the heading and breadcrumbs. Appending a Claude title event updated the open session
+through the existing live stream. Provider titles, descriptions, and message previews remained
+absent from Aeye’s tables.
+
 ## Repository checks
 
 ```sh
@@ -122,7 +142,7 @@ pnpm check
 pnpm build
 ```
 
-All 35 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, TypeScript checks,
+All 36 tests passed. Formatting, lint, type-aware lint, Svelte diagnostics, TypeScript checks,
 and the production build passed.
 
 ## Result
@@ -133,3 +153,5 @@ arrive within one second. The M9 live UI oracle also passes for stream updates, 
 project filtering, reconnect state, singleton watcher cleanup, and database writer exclusion.
 The M10 execution-context oracle passes for structured skill provenance, scratchpad and
 worktree categories, idempotent derivation, and body-free rendering.
+The M11 display-name oracle passes for both providers, subagent task names, bounded message
+fallbacks, live title updates, and zero title persistence in Aeye.

@@ -82,6 +82,11 @@ await test("queries active project, session, usage, tool, and graph read models"
   writeFileSync(
     mainPath,
     line(rootEvent) +
+      line({
+        type: "ai-title",
+        sessionId: "session",
+        aiTitle: "Read model session",
+      }) +
       line(toolEvent) +
       line(toolResult("session", cwd, "result-1", "tools", "2026-07-14T10:00:01.100Z", "tool-1")) +
       line(
@@ -132,6 +137,10 @@ await test("queries active project, session, usage, tool, and graph read models"
       }),
   );
   writeFileSync(
+    join(agentDirectory, "agent-worker.meta.json"),
+    JSON.stringify({ description: "Research delegated task" }),
+  );
+  writeFileSync(
     agentPath,
     line({
       ...toolEvent,
@@ -165,7 +174,7 @@ await test("queries active project, session, usage, tool, and graph read models"
   const db = openDatabase(join(directory, "test.sqlite"));
   try {
     const ingest = await new ClaudeIngestor(db, { root }).scan();
-    assert.equal(ingest.insertedEvents, 10);
+    assert.equal(ingest.insertedEvents, 11);
     db.insert(sessionLinks)
       .values({
         sourceSessionId: "session",
@@ -176,7 +185,7 @@ await test("queries active project, session, usage, tool, and graph read models"
       })
       .run();
     const annotationEvent = db.query.events
-      .findFirst({ where: { sessionId: "session", seq: 1 } })
+      .findFirst({ where: { sessionId: "session", seq: 2 } })
       .sync();
     assert.ok(annotationEvent);
     db.insert(annotations)
@@ -265,9 +274,11 @@ await test("queries active project, session, usage, tool, and graph read models"
 
     const detail = readModel.getSession("session");
     assert.ok(detail);
+    assert.equal(detail.summary.displayName, "Read model session");
+    assert.equal(detail.parent, null);
     assert.equal(detail.summary.tokens.total, 119);
     assert.equal(detail.summary.tokens.deadBranch, 200);
-    assert.equal(detail.graph.nodes.length, 8);
+    assert.equal(detail.graph.nodes.length, 9);
     assert.equal(detail.graph.edges.length, 7);
     assert.equal(detail.graph.nodes.filter(({ isDeadBranch }) => isDeadBranch).length, 1);
     assert.equal(detail.graph.nodes.filter(({ isUsageDuplicate }) => isUsageDuplicate).length, 0);
@@ -287,9 +298,12 @@ await test("queries active project, session, usage, tool, and graph read models"
     assert.equal(detail.links.length, 1);
     assert.equal(detail.links[0]?.direction, "outgoing");
     assert.equal(detail.links[0]?.related.id, "session:agent:agent-worker");
+    assert.equal(detail.links[0]?.related.displayName, "Research delegated task");
 
     const agent = readModel.getSession("session:agent:agent-worker");
     assert.ok(agent);
+    assert.equal(agent.summary.displayName, "Research delegated task");
+    assert.equal(agent.parent?.displayName, "Read model session");
     assert.equal(agent.summary.tokens.total, 5);
     assert.equal(agent.graph.nodes.filter(({ isUsageDuplicate }) => isUsageDuplicate).length, 1);
     assert.equal(agent.links.length, 1);
@@ -347,6 +361,7 @@ await test("validates read model filters", () => {
     assert.throws(() => readModel.toolUsage({ sessionId: "" }), RangeError);
     assert.throws(() => readModel.getSessionGraph(""), RangeError);
     assert.throws(() => readModel.getSessionAnnotations(""), RangeError);
+    assert.throws(() => readModel.getSessionSummary(""), RangeError);
   } finally {
     db.$client.close();
     rmSync(directory, { recursive: true, force: true });

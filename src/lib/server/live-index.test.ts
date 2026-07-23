@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { openDatabase } from "./db/database.ts";
 import { LiveIndex } from "./live-index.ts";
+import { AeyeReadModel } from "./read-model.ts";
 
 async function waitForUpdate(subscription: ReturnType<LiveIndex["subscribe"]>) {
   let timeout: NodeJS.Timeout | undefined;
@@ -64,6 +65,29 @@ await test("indexes watched changes and closes streams and watchers", async () =
     assert.equal(result.value?.projectIds.length, 1);
     assert.equal(result.value?.revision, 1);
 
+    appendFileSync(
+      sessionPath,
+      `${JSON.stringify({
+        type: "ai-title",
+        sessionId: "live-session",
+        aiTitle: "Live session title",
+      })}\n`,
+    );
+    const titleResult = await waitForUpdate(subscription);
+    assert.equal(titleResult.done, false);
+    assert.deepEqual(titleResult.value?.sessionIds, ["live-session"]);
+    assert.equal(titleResult.value?.revision, 2);
+    const titleDb = openDatabase(databasePath);
+    try {
+      assert.equal(
+        new AeyeReadModel(titleDb, { codexHomePath }).getSession("live-session")?.summary
+          .displayName,
+        "Live session title",
+      );
+    } finally {
+      titleDb.$client.close();
+    }
+
     writeFileSync(
       codexSessionPath,
       `${JSON.stringify({
@@ -84,11 +108,11 @@ await test("indexes watched changes and closes streams and watchers", async () =
     assert.equal(codexResult.done, false);
     assert.deepEqual(codexResult.value?.sessionIds, ["codex:live-thread"]);
     assert.deepEqual(codexResult.value?.projectIds, result.value?.projectIds);
-    assert.equal(codexResult.value?.revision, 2);
+    assert.equal(codexResult.value?.revision, 3);
 
     const db = openDatabase(databasePath);
     try {
-      assert.equal(db.$client.prepare("SELECT count(*) AS count FROM events").get()?.["count"], 2);
+      assert.equal(db.$client.prepare("SELECT count(*) AS count FROM events").get()?.["count"], 3);
       assert.equal(
         db.$client.prepare("SELECT count(*) AS count FROM sessions").get()?.["count"],
         2,
