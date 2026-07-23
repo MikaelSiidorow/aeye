@@ -4,6 +4,7 @@ import { openDatabase } from "../src/lib/server/db/database.ts";
 import { env } from "../src/lib/server/env.ts";
 import { CodexIngestor } from "../src/lib/server/ingest/codex-ingestor.ts";
 import { ClaudeIngestor, type IngestErrorEvent } from "../src/lib/server/ingest/ingestor.ts";
+import { deriveSessionLinks } from "../src/lib/server/ingest/session-links.ts";
 import { startClaudeWatcher, startCodexWatcher } from "../src/lib/server/ingest/watcher.ts";
 
 const { values } = parseArgs({
@@ -32,10 +33,14 @@ codex.on("ingest:error", reportError);
 try {
   const claudeSummary = values.reindex ? await claude.reindex() : await claude.scan();
   const codexSummary = await codex.scan();
-  console.log(JSON.stringify({ claude: claudeSummary, codex: codexSummary }));
+  const linkSummary = deriveSessionLinks(db);
+  console.log(JSON.stringify({ claude: claudeSummary, codex: codexSummary, links: linkSummary }));
   if (claudeSummary.failedFiles + codexSummary.failedFiles > 0) process.exitCode = 1;
 
   if (values.watch) {
+    const refreshLinks = () => deriveSessionLinks(db);
+    claude.on("session:updated", refreshLinks);
+    codex.on("session:updated", refreshLinks);
     const watchers = [startClaudeWatcher(claude), startCodexWatcher(codex)];
     await Promise.all(watchers.map(({ ready }) => ready));
     console.log(`Watching ${watchers.map(({ root }) => root).join(", ")}`);

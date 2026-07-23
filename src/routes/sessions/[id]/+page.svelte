@@ -29,6 +29,29 @@
     return `${number.format(hours)} hr ${number.format(minutes % 60)} min`;
   }
 
+  function providerLabel(source: "claude" | "codex") {
+    return source === "codex" ? "Codex" : "Claude Code";
+  }
+
+  function connectionLabel(link: Session["links"][number]) {
+    if (link.kind === "review") {
+      return link.direction === "outgoing" ? "Reviewed by" : "Review requested by";
+    }
+    if (link.kind === "transfer") {
+      return link.direction === "outgoing" ? "Transferred to" : "Transferred from";
+    }
+    return link.direction === "outgoing" ? "Delegated to" : "Delegated from";
+  }
+
+  function connectionTitle(link: Session["links"][number]) {
+    const role = link.related.isSubagent
+      ? "subagent"
+      : link.related.source === "codex"
+        ? "thread"
+        : "session";
+    return `${providerLabel(link.related.source)} ${role}`;
+  }
+
   function layoutGraph(input: Session["graph"]) {
     const childrenBySource = new Map<number, number[]>();
     const parentByTarget = new Map<number, number>();
@@ -128,6 +151,28 @@
       </div>
     </dl>
   </header>
+
+  {#if session.links.length > 0}
+    <section class="connections" aria-labelledby="connections-heading">
+      <h2 id="connections-heading">Connections</h2>
+      <ul>
+        {#each session.links as link (link.id)}
+          <li>
+            <a href={`/sessions/${encodeURIComponent(link.related.id)}`}>
+              <span class="connection-copy">
+                <span class="connection-relation">{connectionLabel(link)}</span>
+                <strong>{connectionTitle(link)}</strong>
+                <span class="connection-meta">
+                  {link.related.projectName} · {formatLocalDateTime(link.related.startedAt)}
+                </span>
+              </span>
+              <span class="connection-arrow" aria-hidden="true">→</span>
+            </a>
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
 
   <section aria-labelledby="tokens-heading">
     <div class="section-heading">
@@ -371,6 +416,61 @@
 
   .section-heading h2 {
     margin-bottom: 1rem;
+  }
+
+  .connections ul {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .connections a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid #e1e6e0;
+    border-radius: 0.5rem;
+    color: #202923;
+    text-decoration: none;
+  }
+
+  .connections a:hover {
+    border-color: #8c9c91;
+    background: #f7f8f6;
+  }
+
+  .connection-copy,
+  .connection-copy strong,
+  .connection-meta {
+    display: block;
+  }
+
+  .connection-relation {
+    color: #607067;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .connection-copy strong {
+    margin-top: 0.15rem;
+    font-size: 1.1rem;
+  }
+
+  .connection-meta {
+    margin-top: 0.2rem;
+    color: #607067;
+    font-size: 0.875rem;
+  }
+
+  .connection-arrow {
+    color: #46604f;
+    font-size: 1.25rem;
   }
 
   dt,

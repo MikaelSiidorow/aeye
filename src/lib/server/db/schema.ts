@@ -31,6 +31,8 @@ export const toolCallStatusValues = [
   "unmatched",
 ] as const;
 export const annotationKindValues = ["skill", "scratchpad", "worktree", "unknown"] as const;
+export const sessionLinkKindValues = ["delegate", "review", "transfer"] as const;
+export const sessionLinkMethodValues = ["thread_id", "job_id", "time_window"] as const;
 
 export const projects = snakeCase.table(
   "projects",
@@ -195,6 +197,33 @@ export const annotations = snakeCase.table(
   ],
 );
 
+export const sessionLinks = snakeCase.table(
+  "session_links",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    sourceSessionId: text()
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    targetSessionId: text()
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    sourceEventId: integer().references(() => events.id, { onDelete: "set null" }),
+    kind: text({ enum: sessionLinkKindValues }).notNull(),
+    method: text({ enum: sessionLinkMethodValues }).notNull(),
+    createdAt: integer().notNull(),
+  },
+  (table) => [
+    uniqueIndex("session_links_source_target_kind_unique").on(
+      table.sourceSessionId,
+      table.targetSessionId,
+      table.kind,
+    ),
+    index("session_links_source_session_id_idx").on(table.sourceSessionId),
+    index("session_links_target_session_id_idx").on(table.targetSessionId),
+    index("session_links_source_event_id_idx").on(table.sourceEventId),
+  ],
+);
+
 export const modelPricing = snakeCase.table(
   "model_pricing",
   {
@@ -316,6 +345,7 @@ export const schema = {
   events,
   toolCalls,
   annotations,
+  sessionLinks,
   modelPricing,
   sessionStats,
 };

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { openDatabase } from "./db/database.ts";
+import { sessionLinks } from "./db/schema.ts";
 import { ClaudeIngestor } from "./ingest/ingestor.ts";
 import { AeyeReadModel } from "./read-model.ts";
 
@@ -165,6 +166,15 @@ await test("queries active project, session, usage, tool, and graph read models"
   try {
     const ingest = await new ClaudeIngestor(db, { root }).scan();
     assert.equal(ingest.insertedEvents, 10);
+    db.insert(sessionLinks)
+      .values({
+        sourceSessionId: "session",
+        targetSessionId: "session:agent:agent-worker",
+        kind: "delegate",
+        method: "thread_id",
+        createdAt: Date.parse("2026-07-14T10:00:01.000Z"),
+      })
+      .run();
     const readModel = new AeyeReadModel(db);
 
     assert.deepEqual(readModel.overview(), {
@@ -250,11 +260,17 @@ await test("queries active project, session, usage, tool, and graph read models"
     assert.equal(detail.graph.nodes.filter(({ isUsageDuplicate }) => isUsageDuplicate).length, 0);
     assert.equal(detail.models.length, 1);
     assert.equal(detail.tools[0]?.calls, 4);
+    assert.equal(detail.links.length, 1);
+    assert.equal(detail.links[0]?.direction, "outgoing");
+    assert.equal(detail.links[0]?.related.id, "session:agent:agent-worker");
 
     const agent = readModel.getSession("session:agent:agent-worker");
     assert.ok(agent);
     assert.equal(agent.summary.tokens.total, 5);
     assert.equal(agent.graph.nodes.filter(({ isUsageDuplicate }) => isUsageDuplicate).length, 1);
+    assert.equal(agent.links.length, 1);
+    assert.equal(agent.links[0]?.direction, "incoming");
+    assert.equal(agent.links[0]?.related.id, "session");
     assert.equal(readModel.getSession("missing"), null);
 
     const serialized = JSON.stringify({ projects, sessions, detail, agent });

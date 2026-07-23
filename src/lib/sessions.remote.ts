@@ -70,6 +70,23 @@ export const getSession = query(sessionIdSchema, (sessionId) => {
         tokens: detail.summary.tokens,
         costUsd: detail.summary.costUsd,
       },
+      links: detail.links.map(({ id, direction, kind, method, related }) => ({
+        id,
+        direction,
+        kind,
+        method,
+        related: {
+          id: related.id,
+          projectId: related.projectId,
+          projectName: related.projectName,
+          parentId: related.parentId,
+          isSubagent: related.agentId !== null,
+          source: related.source,
+          clientName: related.clientName,
+          clientVersion: related.clientVersion,
+          startedAt: related.startedAt,
+        },
+      })),
       models: detail.models.map(({ model, tokens }) => ({ model, tokens })),
       tools: detail.tools.map(
         ({ name, calls, completed, errors, interrupted, p50DurationMs, p95DurationMs }) => ({

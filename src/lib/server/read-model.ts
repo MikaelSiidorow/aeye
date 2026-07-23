@@ -1,4 +1,15 @@
-import { and, asc, countDistinct, desc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  countDistinct,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 import type { Database } from "./db/database.ts";
 import {
@@ -6,6 +17,7 @@ import {
   activeUsageEvents,
   events,
   projects,
+  sessionLinks,
   sessionReadModel,
 } from "./db/schema.ts";
 
@@ -116,8 +128,18 @@ export interface SessionGraph {
   edges: SessionGraphEdge[];
 }
 
+export interface SessionLink {
+  id: number;
+  direction: "outgoing" | "incoming";
+  kind: (typeof sessionLinks.$inferSelect)["kind"];
+  method: (typeof sessionLinks.$inferSelect)["method"];
+  sourceEventId: number | null;
+  related: SessionSummary;
+}
+
 export interface SessionDetail {
   summary: SessionSummary;
+  links: SessionLink[];
   models: ModelUsage[];
   tools: ToolUsage[];
   graph: SessionGraph;
@@ -534,6 +556,54 @@ export class AeyeReadModel {
     return { nodes, edges };
   }
 
+  getSessionLinks(sessionId: string): SessionLink[] {
+    if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
+    const links = this.#db
+      .select()
+      .from(sessionLinks)
+      .where(
+        or(
+          eq(sessionLinks.sourceSessionId, sessionId),
+          eq(sessionLinks.targetSessionId, sessionId),
+        ),
+      )
+      .orderBy(asc(sessionLinks.createdAt), asc(sessionLinks.id))
+      .all();
+    const relatedIds = [
+      ...new Set(
+        links.map((link) =>
+          link.sourceSessionId === sessionId ? link.targetSessionId : link.sourceSessionId,
+        ),
+      ),
+    ];
+    if (relatedIds.length === 0) return [];
+
+    const relatedById = new Map(
+      this.#db
+        .select()
+        .from(sessionReadModel)
+        .where(inArray(sessionReadModel.id, relatedIds))
+        .all()
+        .map((row) => [row.id, sessionSummary(row)]),
+    );
+
+    return links.flatMap((link) => {
+      const outgoing = link.sourceSessionId === sessionId;
+      const related = relatedById.get(outgoing ? link.targetSessionId : link.sourceSessionId);
+      if (related === undefined) return [];
+      return [
+        {
+          id: link.id,
+          direction: outgoing ? "outgoing" : "incoming",
+          kind: link.kind,
+          method: link.method,
+          sourceEventId: link.sourceEventId,
+          related,
+        } satisfies SessionLink,
+      ];
+    });
+  }
+
   getSession(sessionId: string): SessionDetail | null {
     if (sessionId.length === 0) throw new RangeError("sessionId must not be empty");
     const row = this.#db
@@ -546,6 +616,7 @@ export class AeyeReadModel {
 
     return {
       summary: sessionSummary(row),
+      links: this.getSessionLinks(sessionId),
       models: this.usageByModel({ sessionId }),
       tools: this.toolUsage({ sessionId }),
       graph: this.getSessionGraph(sessionId),
