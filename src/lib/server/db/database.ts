@@ -1,15 +1,13 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 
 import { drizzle } from "drizzle-orm/node-sqlite";
-import { migrate } from "drizzle-orm/node-sqlite/migrator";
+import { migrateSync } from "drizzle-orm/sqlite-core";
 
 import { env } from "../env.ts";
+import { migrations } from "./migrations.generated.ts";
 import { relations } from "./schema.ts";
-
-const migrationsFolder = new URL("../../../../drizzle/", import.meta.url);
 
 export function openDatabase(path = env.databasePath) {
   if (path !== ":memory:") {
@@ -22,8 +20,7 @@ export function openDatabase(path = env.databasePath) {
   client.exec("PRAGMA foreign_keys = ON");
 
   const db = drizzle({ client, relations });
-  migrate(db, {
-    migrationsFolder: fileURLToPath(migrationsFolder),
+  migrateSync(migrations, db._.session, {
     migrationsTable: "__migrations",
   });
   return db;

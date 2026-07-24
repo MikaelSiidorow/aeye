@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultClaudeProjectsPath, defaultCodexHomePath, loadEnvironment } from "./env.ts";
+import {
+  defaultClaudeProjectsPath,
+  defaultCodexHomePath,
+  defaultDatabasePath,
+  loadEnvironment,
+} from "./env.ts";
 
 await test("loads and validates the environment", () => {
   assert.deepEqual(loadEnvironment({}), {
-    databasePath: "data/aeye.sqlite",
+    databasePath: defaultDatabasePath,
     claudeProjectsPath: defaultClaudeProjectsPath,
     codexHomePath: defaultCodexHomePath,
   });
+  assert.equal(
+    loadEnvironment({ XDG_STATE_HOME: "/tmp/aeye-state" }).databasePath,
+    "/tmp/aeye-state/aeye/aeye.sqlite",
+  );
   assert.deepEqual(
     loadEnvironment({
       AEYE_DB_PATH: " /tmp/aeye.sqlite ",
@@ -24,6 +33,7 @@ await test("loads and validates the environment", () => {
   );
   assert.throws(() => loadEnvironment({ AEYE_DB_PATH: " " }), /must not be empty/);
   assert.throws(() => loadEnvironment({ AEYE_DB_PATH: "bad\0path" }), /null byte/);
+  assert.throws(() => loadEnvironment({ XDG_STATE_HOME: " " }), /must not be empty/);
   assert.throws(() => loadEnvironment({ AEYE_CLAUDE_PROJECTS_PATH: " " }), /must not be empty/);
   assert.throws(() => loadEnvironment({ AEYE_CODEX_HOME_PATH: " " }), /must not be empty/);
   assert.throws(() => loadEnvironment({ CODEX_HOME: " " }), /must not be empty/);

@@ -7,6 +7,7 @@ export interface Environment {
   codexHomePath: string;
 }
 
+export const defaultDatabasePath = join(homedir(), ".local", "state", "aeye", "aeye.sqlite");
 export const defaultClaudeProjectsPath = join(homedir(), ".claude", "projects");
 export const defaultCodexHomePath = join(homedir(), ".codex");
 
@@ -27,8 +28,9 @@ function readPath(source: NodeJS.ProcessEnv, name: string, fallback: string) {
 
 export function loadEnvironment(source: NodeJS.ProcessEnv = process.env): Environment {
   const codexHomePath = readPath(source, "CODEX_HOME", defaultCodexHomePath);
+  const stateHome = readPath(source, "XDG_STATE_HOME", join(homedir(), ".local", "state"));
   return {
-    databasePath: readPath(source, "AEYE_DB_PATH", "data/aeye.sqlite"),
+    databasePath: readPath(source, "AEYE_DB_PATH", join(stateHome, "aeye", "aeye.sqlite")),
     claudeProjectsPath: readPath(source, "AEYE_CLAUDE_PROJECTS_PATH", defaultClaudeProjectsPath),
     codexHomePath: readPath(source, "AEYE_CODEX_HOME_PATH", codexHomePath),
   };

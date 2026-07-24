@@ -4,16 +4,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev --host 127.0.0.1",
-    "build": "vite build",
+    "build": "node scripts/embed-migrations.ts --check && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "start": "HOST=127.0.0.1 node build",
+    "start": "HOST=127.0.0.1 PORT=41837 node build",
     "prepare": "svelte-kit sync",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "drizzle-kit generate && node scripts/embed-migrations.ts",
+    "migrations:embed": "node scripts/embed-migrations.ts",
     "fmt": "oxfmt .",
     "ingest": "node scripts/ingest.ts",
     "migrate": "node scripts/migrate.ts",
     "test": "node --test",
-    "check": "svelte-kit sync && oxfmt --check . && oxlint --type-aware --type-check . && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit"
+    "check": "node scripts/embed-migrations.ts --check && svelte-kit sync && oxfmt --check . && oxlint --type-aware --type-check . && svelte-check --tsconfig ./tsconfig.json && tsc --noEmit"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
