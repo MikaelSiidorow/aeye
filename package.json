@@ -6,7 +6,7 @@
     "dev": "vite dev --host 127.0.0.1",
     "build": "node scripts/embed-migrations.ts --check && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "start": "HOST=127.0.0.1 PORT=41837 node build",
+    "start": "HOST=127.0.0.1 PORT=41837 ORIGIN=http://127.0.0.1:41837 node build",
     "prepare": "svelte-kit sync",
     "db:generate": "drizzle-kit generate && node scripts/embed-migrations.ts",
     "migrations:embed": "node scripts/embed-migrations.ts",

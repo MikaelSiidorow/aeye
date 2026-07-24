@@ -19,7 +19,7 @@ nix build
 ./result/bin/aeye
 ```
 
-Set `PORT`, `AEYE_DB_PATH`, `AEYE_CLAUDE_PROJECTS_PATH`, or `AEYE_CODEX_HOME_PATH` to override the defaults.
+Set `AEYE_DB_PATH`, `AEYE_CLAUDE_PROJECTS_PATH`, or `AEYE_CODEX_HOME_PATH` to override the defaults. When running the command directly on another port, set matching `PORT` and `ORIGIN` values. The Home Manager module derives `ORIGIN` from its `port` option automatically.
 
 ## Home Manager
 

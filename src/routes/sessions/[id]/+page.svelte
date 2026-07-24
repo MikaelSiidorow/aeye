@@ -103,13 +103,29 @@
     }
   }
 
+  function commandErrorMessage(cause: unknown) {
+    if (cause instanceof Error) return cause.message;
+    if (cause !== null && typeof cause === "object" && "body" in cause) {
+      const body = cause.body;
+      if (
+        body !== null &&
+        typeof body === "object" &&
+        "message" in body &&
+        typeof body.message === "string"
+      ) {
+        return body.message;
+      }
+    }
+    return "The terminal could not be opened.";
+  }
+
   async function openResumeSession() {
     resumeMessage = null;
     try {
       const result = await launchSession(params.id);
       resumeMessage = `Opened in ${result.terminal}.`;
     } catch (cause) {
-      resumeMessage = cause instanceof Error ? cause.message : "The terminal could not be opened.";
+      resumeMessage = commandErrorMessage(cause);
     }
   }
 

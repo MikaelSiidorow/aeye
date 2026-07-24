@@ -13,6 +13,7 @@ let
     AEYE_DB_PATH = "${cfg.stateDirectory}/aeye.sqlite";
     HOST = "127.0.0.1";
     NODE_ENV = "production";
+    ORIGIN = "http://127.0.0.1:${toString cfg.port}";
     PORT = toString cfg.port;
   };
 in

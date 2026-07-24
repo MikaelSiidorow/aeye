@@ -73,6 +73,7 @@
                 --add-flags "$out/lib/aeye/build" \
                 --set-default HOST 127.0.0.1 \
                 --set-default PORT 41837 \
+                --set-default ORIGIN http://127.0.0.1:41837 \
                 --set-default NODE_ENV production
               runHook postInstall
             '';
