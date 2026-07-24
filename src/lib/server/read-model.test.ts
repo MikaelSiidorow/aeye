@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { openDatabase } from "./db/database.ts";
-import { annotations, sessionLinks } from "./db/schema.ts";
+import { annotations, projects, sessionLinks, sessions, sessionStats } from "./db/schema.ts";
 import { ClaudeIngestor } from "./ingest/ingestor.ts";
 import { AeyeReadModel } from "./read-model.ts";
 
@@ -328,6 +328,127 @@ await test("queries active project, session, usage, tool, and graph read models"
   }
 });
 
+await test("builds one project hierarchy from native parents and delegation links", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aeye-read-model-hierarchy-"));
+  const db = openDatabase(join(directory, "test.sqlite"));
+  try {
+    const project = db
+      .insert(projects)
+      .values({
+        path: "/tmp/hierarchy",
+        name: "hierarchy",
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .returning()
+      .get();
+    db.insert(sessions)
+      .values([
+        {
+          id: "root",
+          sourceSessionId: "root",
+          projectId: project.id,
+          cwd: project.path,
+        },
+        {
+          id: "agent",
+          sourceSessionId: "root",
+          projectId: project.id,
+          parentId: "root",
+          agentId: "agent",
+          cwd: project.path,
+        },
+        {
+          id: "codex",
+          sourceSessionId: "codex",
+          projectId: project.id,
+          source: "codex",
+          cwd: project.path,
+        },
+        {
+          id: "independent",
+          sourceSessionId: "independent",
+          projectId: project.id,
+          source: "codex",
+          cwd: project.path,
+        },
+      ])
+      .run();
+    db.insert(sessionStats)
+      .values(
+        ["root", "agent", "codex", "independent"].map((sessionId) => ({
+          sessionId,
+          updatedAt: 1,
+        })),
+      )
+      .run();
+    db.insert(sessionLinks)
+      .values([
+        {
+          sourceSessionId: "root",
+          targetSessionId: "agent",
+          kind: "delegate",
+          method: "thread_id",
+          createdAt: 1,
+        },
+        {
+          sourceSessionId: "agent",
+          targetSessionId: "codex",
+          kind: "delegate",
+          method: "thread_id",
+          createdAt: 2,
+        },
+        {
+          sourceSessionId: "codex",
+          targetSessionId: "root",
+          kind: "delegate",
+          method: "thread_id",
+          createdAt: 3,
+        },
+        {
+          sourceSessionId: "root",
+          targetSessionId: "codex",
+          kind: "delegate",
+          method: "time_window",
+          createdAt: 1,
+        },
+        {
+          sourceSessionId: "root",
+          targetSessionId: "independent",
+          kind: "review",
+          method: "thread_id",
+          createdAt: 1,
+        },
+      ])
+      .run();
+
+    assert.deepEqual(new AeyeReadModel(db).getProjectSessionHierarchy(project.id), {
+      relationships: [
+        {
+          sessionId: "agent",
+          parentSessionId: "root",
+          kind: "native",
+        },
+        {
+          sessionId: "independent",
+          parentSessionId: "root",
+          kind: "review",
+        },
+        {
+          sessionId: "codex",
+          parentSessionId: "agent",
+          kind: "delegate",
+        },
+      ],
+      topLevelSessionCount: 1,
+      nestedSessionCount: 3,
+    });
+  } finally {
+    db.$client.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 await test("validates read model filters", () => {
   const directory = mkdtempSync(join(tmpdir(), "aeye-read-model-validation-"));
   const db = openDatabase(join(directory, "test.sqlite"));
@@ -356,6 +477,7 @@ await test("validates read model filters", () => {
     assert.throws(() => readModel.listSessions({ projectId: 0 }), RangeError);
     assert.throws(() => readModel.listSessions({ limit: 501 }), RangeError);
     assert.throws(() => readModel.listSessions({ offset: -1 }), RangeError);
+    assert.throws(() => readModel.getProjectSessionHierarchy(0), RangeError);
     assert.throws(() => readModel.usageByDay({ timeZone: "not/a-time-zone" }), RangeError);
     assert.throws(() => readModel.usageByModel({ sessionId: "" }), RangeError);
     assert.throws(() => readModel.toolUsage({ sessionId: "" }), RangeError);

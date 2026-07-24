@@ -165,6 +165,18 @@ export interface SessionListOptions {
   offset?: number | undefined;
 }
 
+export interface ProjectSessionRelationship {
+  sessionId: string;
+  parentSessionId: string;
+  kind: "native" | (typeof sessionLinks.$inferSelect)["kind"];
+}
+
+export interface ProjectSessionHierarchy {
+  relationships: ProjectSessionRelationship[];
+  topLevelSessionCount: number;
+  nestedSessionCount: number;
+}
+
 export interface BreakdownOptions {
   projectId?: number | undefined;
   sessionId?: string | undefined;
@@ -217,6 +229,21 @@ function finiteInteger(value: number, name: string, minimum: number) {
 
 function optionalProjectId(projectId: number | undefined) {
   return projectId === undefined ? undefined : finiteInteger(projectId, "projectId", 1);
+}
+
+function createsRelationshipCycle(
+  relationships: ReadonlyMap<string, ProjectSessionRelationship>,
+  sessionId: string,
+  parentSessionId: string,
+) {
+  let ancestorId: string | undefined = parentSessionId;
+  const visited = new Set<string>();
+  while (ancestorId !== undefined && !visited.has(ancestorId)) {
+    if (ancestorId === sessionId) return true;
+    visited.add(ancestorId);
+    ancestorId = relationships.get(ancestorId)?.parentSessionId;
+  }
+  return false;
 }
 
 function breakdownCondition({ projectId, sessionId }: BreakdownOptions): SQL | undefined {
@@ -438,6 +465,91 @@ export class AeyeReadModel {
       .offset(validOffset)
       .all();
     return this.#sessionSummaries(rows);
+  }
+
+  getProjectSessionHierarchy(projectId: number): ProjectSessionHierarchy {
+    const validProjectId = finiteInteger(projectId, "projectId", 1);
+    const sessions = this.#db
+      .select({
+        id: sessionReadModel.id,
+        parentId: sessionReadModel.parentId,
+      })
+      .from(sessionReadModel)
+      .where(eq(sessionReadModel.projectId, validProjectId))
+      .orderBy(asc(sessionReadModel.id))
+      .all();
+    const sessionIds = new Set(sessions.map(({ id }) => id));
+    const relationships = new Map<string, ProjectSessionRelationship>();
+
+    for (const session of sessions) {
+      if (
+        session.parentId === null ||
+        !sessionIds.has(session.parentId) ||
+        createsRelationshipCycle(relationships, session.id, session.parentId)
+      ) {
+        continue;
+      }
+      relationships.set(session.id, {
+        sessionId: session.id,
+        parentSessionId: session.parentId,
+        kind: "native",
+      });
+    }
+
+    const delegationLinks = this.#db.$client
+      .prepare(
+        `SELECT
+           links.source_session_id AS sourceSessionId,
+           links.target_session_id AS targetSessionId,
+           links.kind
+         FROM session_links links
+         INNER JOIN sessions source ON source.id = links.source_session_id
+         INNER JOIN sessions target ON target.id = links.target_session_id
+         WHERE
+           source.project_id = ?
+           AND target.project_id = ?
+         ORDER BY
+           CASE links.method
+             WHEN 'thread_id' THEN 0
+             WHEN 'job_id' THEN 1
+             ELSE 2
+           END,
+           links.created_at,
+           CASE links.kind
+             WHEN 'delegate' THEN 0
+             WHEN 'review' THEN 1
+             ELSE 2
+           END,
+           links.id`,
+      )
+      .all(validProjectId, validProjectId) as unknown as {
+      sourceSessionId: string;
+      targetSessionId: string;
+      kind: (typeof sessionLinks.$inferSelect)["kind"];
+    }[];
+
+    for (const link of delegationLinks) {
+      if (
+        relationships.has(link.targetSessionId) ||
+        !sessionIds.has(link.sourceSessionId) ||
+        !sessionIds.has(link.targetSessionId) ||
+        createsRelationshipCycle(relationships, link.targetSessionId, link.sourceSessionId)
+      ) {
+        continue;
+      }
+      relationships.set(link.targetSessionId, {
+        sessionId: link.targetSessionId,
+        parentSessionId: link.sourceSessionId,
+        kind: link.kind,
+      });
+    }
+
+    const result = [...relationships.values()];
+    return {
+      relationships: result,
+      topLevelSessionCount: sessions.length - result.length,
+      nestedSessionCount: result.length,
+    };
   }
 
   usageByDay({ projectId, sessionId, timeZone = "UTC" }: DailyUsageOptions = {}): DailyUsage[] {

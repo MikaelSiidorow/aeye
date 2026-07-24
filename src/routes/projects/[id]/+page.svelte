@@ -3,6 +3,7 @@
   import LiveStatus from "$lib/components/LiveStatus.svelte";
   import { formatLocalDateTime } from "$lib/date";
   import { getProject } from "$lib/projects.remote";
+  import { buildSessionGroups } from "$lib/session-hierarchy";
 
   import type { PageProps } from "./$types";
 
@@ -12,33 +13,22 @@
   let { params }: PageProps = $props();
   const projectQuery = $derived(getProject(params.id));
   const project = $derived(await projectQuery);
-  const hierarchy = $derived(groupSessions(project.sessions));
+  const hierarchy = $derived(buildSessionGroups(project.sessions));
   const number = new Intl.NumberFormat("en");
 
-  function groupSessions(sessions: ProjectSession[]) {
-    const roots = sessions.filter(({ isSubagent }) => !isSubagent);
-    const rootIds = new Set(roots.map(({ id }) => id));
-    const childrenByParent = new Map<string, ProjectSession[]>();
+  function relationshipLabel(session: ProjectSession) {
+    if (session.relationship === "delegate") return "Delegated";
+    if (session.relationship === "review") return "Review";
+    if (session.relationship === "transfer") return "Transfer";
+    return session.isSubagent ? "Subagent" : "Child";
+  }
 
-    for (const session of sessions) {
-      if (!session.isSubagent || session.parentId === null || !rootIds.has(session.parentId)) {
-        continue;
-      }
-      const children = childrenByParent.get(session.parentId) ?? [];
-      children.push(session);
-      childrenByParent.set(session.parentId, children);
-    }
+  function isLinkedSession(session: ProjectSession) {
+    return session.relationship !== null && session.relationship !== "native";
+  }
 
-    return {
-      groups: roots.map((root) => ({
-        root,
-        children: childrenByParent.get(root.id) ?? [],
-      })),
-      orphans: sessions.filter(
-        ({ isSubagent, parentId }) =>
-          isSubagent && (parentId === null || !rootIds.has(parentId)),
-      ),
-    };
+  function sourceLabel(session: ProjectSession) {
+    return session.source === "claude" ? "Claude" : "Codex";
   }
 
   function activityTimestamp(session: ProjectSession) {
@@ -74,9 +64,8 @@
     <h1>{project.name}</h1>
     <p class="project-summary">
       {number.format(project.sessionCount)} indexed sessions across
-      {number.format(project.rootSessionCount)} root {project.rootSessionCount === 1
-        ? "session"
-        : "sessions"}
+      {number.format(project.topLevelSessionCount)} top-level
+      {project.topLevelSessionCount === 1 ? "session" : "sessions"}
     </p>
 
     <dl class="project-metrics">
@@ -89,12 +78,12 @@
         <dd>{number.format(project.toolCalls)}</dd>
       </div>
       <div>
-        <dt>Root sessions</dt>
-        <dd>{number.format(project.rootSessionCount)}</dd>
+        <dt>Top-level sessions</dt>
+        <dd>{number.format(project.topLevelSessionCount)}</dd>
       </div>
       <div>
-        <dt>Subagents</dt>
-        <dd>{number.format(project.subagentSessionCount)}</dd>
+        <dt>Nested sessions</dt>
+        <dd>{number.format(project.nestedSessionCount)}</dd>
       </div>
     </dl>
 
@@ -113,8 +102,8 @@
         <h2 id="sessions-heading">Session tree</h2>
       </div>
       <p>
-        {number.format(project.rootSessionCount)} roots ·
-        {number.format(project.subagentSessionCount)} subagents
+        {number.format(project.topLevelSessionCount)} top-level ·
+        {number.format(project.nestedSessionCount)} nested
       </p>
     </div>
 
@@ -130,6 +119,7 @@
                 <div class="session-title">
                   <span class="badge root-badge">Root</span>
                   <strong>{group.root.displayName}</strong>
+                  <span class="session-source">{sourceLabel(group.root)}</span>
                 </div>
                 <time
                   datetime={rootTimestamp === null
@@ -149,24 +139,36 @@
               </div>
             </a>
 
-            {#if group.children.length > 0}
-              <div class="subagent-branch">
+            {#if group.descendants.length > 0}
+              <div class="connection-branch">
                 <div class="branch-heading">
                   <strong>
-                    {number.format(group.children.length)}
-                    {group.children.length === 1 ? "subagent" : "subagents"}
+                    {number.format(group.descendants.length)} connected
+                    {group.descendants.length === 1 ? "session" : "sessions"}
                   </strong>
-                  <span>Delegated from this root session</span>
+                  <span>Subagents and linked sessions</span>
                 </div>
-                <ol class="subagent-list">
-                  {#each group.children as child}
+                <ol class="connection-list">
+                  {#each group.descendants as entry}
+                    {@const child = entry.session}
                     {@const childTimestamp = activityTimestamp(child)}
-                    <li>
+                    <li
+                      class="tree-entry"
+                      class:linked-entry={isLinkedSession(child)}
+                      style={`--tree-depth: ${entry.depth}`}
+                    >
                       <a class="session-row child-row" href={sessionHref(child)}>
                         <div class="session-identity">
                           <div class="session-title">
-                            <span class="badge subagent-badge">Subagent</span>
+                            <span
+                              class="badge"
+                              class:linked-badge={isLinkedSession(child)}
+                              class:subagent-badge={!isLinkedSession(child)}
+                            >
+                              {relationshipLabel(child)}
+                            </span>
                             <strong>{child.displayName}</strong>
+                            <span class="session-source">{sourceLabel(child)}</span>
                           </div>
                           <time
                             datetime={childTimestamp === null
@@ -177,7 +179,10 @@
                           </time>
                         </div>
                         <div class="row-end">
-                          <div class="session-metrics" aria-label="Subagent statistics">
+                          <div
+                            class="session-metrics"
+                            aria-label={`${relationshipLabel(child)} session statistics`}
+                          >
                             <span><strong>{number.format(child.tokens)}</strong> tokens</span>
                             <span><strong>{number.format(child.toolCalls)}</strong> tools</span>
                             <span><strong>{number.format(turns(child))}</strong> turns</span>
@@ -193,22 +198,34 @@
           </li>
         {/each}
 
-        {#if hierarchy.orphans.length > 0}
+        {#if hierarchy.unresolved.length > 0}
           <li class="session-group orphan-group">
-            <div class="subagent-branch">
+            <div class="connection-branch">
               <div class="branch-heading">
-                <strong>Other subagents</strong>
-                <span>Their root sessions are outside this result window</span>
+                <strong>Other connected sessions</strong>
+                <span>Their parent sessions are outside this result window</span>
               </div>
-              <ol class="subagent-list">
-                {#each hierarchy.orphans as child}
+              <ol class="connection-list">
+                {#each hierarchy.unresolved as entry}
+                  {@const child = entry.session}
                   {@const childTimestamp = activityTimestamp(child)}
-                  <li>
+                  <li
+                    class="tree-entry"
+                    class:linked-entry={isLinkedSession(child)}
+                    style={`--tree-depth: ${entry.depth}`}
+                  >
                     <a class="session-row child-row" href={sessionHref(child)}>
                       <div class="session-identity">
                         <div class="session-title">
-                          <span class="badge subagent-badge">Subagent</span>
+                          <span
+                            class="badge"
+                            class:linked-badge={isLinkedSession(child)}
+                            class:subagent-badge={!isLinkedSession(child)}
+                          >
+                            {relationshipLabel(child)}
+                          </span>
                           <strong>{child.displayName}</strong>
+                          <span class="session-source">{sourceLabel(child)}</span>
                         </div>
                         <time
                           datetime={childTimestamp === null
@@ -219,7 +236,10 @@
                         </time>
                       </div>
                       <div class="row-end">
-                        <div class="session-metrics" aria-label="Subagent statistics">
+                        <div
+                          class="session-metrics"
+                          aria-label={`${relationshipLabel(child)} session statistics`}
+                        >
                           <span><strong>{number.format(child.tokens)}</strong> tokens</span>
                           <span><strong>{number.format(child.toolCalls)}</strong> tools</span>
                           <span><strong>{number.format(turns(child))}</strong> turns</span>
@@ -384,7 +404,7 @@
   }
 
   .session-groups,
-  .subagent-list {
+  .connection-list {
     margin: 0;
     padding: 0;
     list-style: none;
@@ -440,6 +460,7 @@
 
   .session-title {
     gap: 0.6rem;
+    flex-wrap: wrap;
   }
 
   .session-title strong {
@@ -465,6 +486,17 @@
   .subagent-badge {
     color: #4f5f55;
     background: #e3e9e4;
+  }
+
+  .linked-badge {
+    color: #755a21;
+    background: #f4e8c9;
+  }
+
+  .session-source {
+    color: var(--color-muted);
+    font-size: 0.7rem;
+    font-weight: 650;
   }
 
   time {
@@ -503,7 +535,7 @@
     color: var(--color-accent);
   }
 
-  .subagent-branch {
+  .connection-branch {
     padding: 1rem 1.25rem 1.15rem;
     border-top: 1px solid var(--color-line);
     background: var(--color-surface-subtle);
@@ -526,15 +558,15 @@
     font-size: 0.72rem;
   }
 
-  .subagent-list {
+  .connection-list {
     border-left: 2px solid #cbd8ce;
   }
 
-  .subagent-list li {
+  .connection-list li {
     position: relative;
   }
 
-  .subagent-list li::before {
+  .connection-list li::before {
     position: absolute;
     top: 1.45rem;
     left: 0;
@@ -543,8 +575,16 @@
     content: "";
   }
 
-  .subagent-list li + li {
+  .connection-list li + li {
     border-top: 1px solid var(--color-line);
+  }
+
+  .tree-entry {
+    margin-left: calc((var(--tree-depth) - 1) * 1.25rem);
+  }
+
+  .tree-entry.linked-entry::before {
+    border-color: #d7bd7d;
   }
 
   .child-row {
@@ -559,7 +599,7 @@
     font-size: 0.72rem;
   }
 
-  .orphan-group .subagent-branch {
+  .orphan-group .connection-branch {
     border-top: 0;
   }
 
@@ -607,7 +647,7 @@
     }
 
     .root-row,
-    .subagent-branch {
+    .connection-branch {
       padding-right: 1rem;
       padding-left: 1rem;
     }

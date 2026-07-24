@@ -27,11 +27,17 @@ function readProject(projectId: number) {
     const project = readModel.listProjects().find(({ id }) => id === projectId);
     if (!project) error(404, "Project not found");
 
+    const hierarchy = readModel.getProjectSessionHierarchy(projectId);
+    const relationshipBySessionId = new Map(
+      hierarchy.relationships.map((relationship) => [relationship.sessionId, relationship]),
+    );
     const sessions = readModel.listSessions({ projectId, limit: 100 }).map((session) => ({
+      relationship: relationshipBySessionId.get(session.id)?.kind ?? null,
+      presentationParentId: relationshipBySessionId.get(session.id)?.parentSessionId ?? null,
       id: session.id,
       displayName: session.displayName,
-      parentId: session.parentId,
       isSubagent: session.agentId !== null,
+      source: session.source,
       userTurns: session.userTurns,
       assistantTurns: session.assistantTurns,
       toolCalls: session.toolCalls,
@@ -43,8 +49,8 @@ function readProject(projectId: number) {
     return {
       name: project.name,
       sessionCount: project.sessionCount,
-      rootSessionCount: project.rootSessionCount,
-      subagentSessionCount: project.subagentSessionCount,
+      topLevelSessionCount: hierarchy.topLevelSessionCount,
+      nestedSessionCount: hierarchy.nestedSessionCount,
       toolCalls: project.toolCalls,
       tokens: {
         total: project.tokens.total,
